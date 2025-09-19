@@ -1,0 +1,44 @@
+@import '../../css/colorDefinations.less';
+@import (reference) '../../../node_modules/bootstrap/less/bootstrap.less';
+
+.mainInfo .rt-thead {
+  color: saturate(@orangeColor, 10%);
+  font-weight: bold;
+}
+
+.mainInfo .ReactTable {
+  border: none;
+}
+
+.mainInfo .pagination-bottom {
+  background-color: fadeout(@orangeColor, 30%);
+  color: @whiteColor;
+  font-size: smaller;
+}
+
+.mainInfo .ReactTable .-pagination input,
+.mainInfo .ReactTable .-pagination select {
+  color: black;
+  font-size: x-small;
+}
+
+.mainInfo .ReactTable .-pagination .-btn {
+  &:extend(.btn-success);
+}
+
+.mainInfo .ReactTable .rt-td {
+  padding: 0px 5px;
+}
+
+.mainInfo .ReactTable .-pagination .-center {
+  text-align: center;
+}
+
+.react-contextmenu-item--divider {
+  border-bottom: 1px solid #999;
+  margin: 0px 5px;
+}
+
+.searchResults .react-contextmenu-item .badge {
+  margin: 5px;
+}

@@ -1,0 +1,32 @@
+﻿@model revCore2site.Controllers.OAuthRedirected
+@{
+    Layout = null;
+}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width" />
+    <title>Processing</title>
+</head>
+<body style="text-align:center">
+    <h2>Please wait ...</h2>
+
+    <h4>@Model.error</h4>
+
+    <script type="text/javascript">
+        if (typeof localStorage === "undefined")
+            console.warn('no local storage found');
+        else {
+            if ('@Model.jwt') {
+                localStorage.setItem('persisted-jwt', '@Model.jwt');
+            }
+
+            if ('@Model.redirect') {
+                window.location = '@Model.redirect' ;
+            }
+             
+        }
+    </script>
+
+</body>
+</html>

@@ -1,0 +1,39 @@
+{
+  "compilerOptions": {
+    "noEmitOnError": true,
+    "baseUrl": ".",
+    "module": "es2015",
+    "moduleResolution": "node",
+    "target": "es5",
+    "jsx": "react",
+    "experimentalDecorators": true,
+    "sourceMap": true,
+    "skipDefaultLibCheck": true,
+    "strict": false,
+    "allowJs": true,
+    "lib": ["es6", "dom"],
+    "typeRoots": ["./ClientApp/@types"],
+    //"typeRoots": [ "./ClientApp/@types", "node_modules/@types" ],
+    "paths": {
+      "*": ["*", "reactWebUtils/*", "pullRequests/*"]
+    }
+  },
+  "exclude": [
+    "bin",
+    "**/bin",
+    "**/obj",
+    "node_modules",
+    "**/node_modules",
+    "reactWebUtils",
+    "pullRequests",
+    "wwwroot",
+    "testData",
+    "sampleTestfiles",
+    "Integrations",
+    "Properties",
+    "obj",
+    "deployment",
+    "Utilities",
+    "Controllers"
+  ]
+}

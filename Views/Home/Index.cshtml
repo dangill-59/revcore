@@ -1,0 +1,24 @@
+<div id="react-app" asp-prerender-module="ClientApp/dist/main-server">Loading...</div>
+
+@section styles {
+	@if ((bool)ViewData["includeVendorStyle"])
+	{
+		<link rel="stylesheet" href="~/dist/vendor.css" asp-append-version="true" />
+	}
+}
+
+
+@section scripts {
+
+	@if ((bool)ViewData["includeVendorStyle"])
+	{
+		<script src="~/dist/vendor.js" asp-append-version="true"></script>
+	}
+
+	@foreach (var jsScript in (string[])ViewData["JSIncludes"])
+	{
+		<script src="@jsScript" ></script>
+	}
+
+	<script src="~/dist/main-client.js" asp-append-version="true"></script>
+}

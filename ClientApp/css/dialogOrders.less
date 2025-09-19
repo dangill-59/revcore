@@ -1,0 +1,21 @@
+//This file makes sure all Modals have correct zIndex orders
+
+@normalModalbackDropZindex: 1040;
+
+//normalModelZindex = @normalModalbackDropZindex+10
+
+.waitBoxBackDrop {
+  z-index: @normalModalbackDropZindex+20;
+}
+
+.waitBox.in.modal {
+  z-index: @normalModalbackDropZindex+30;
+}
+
+.confirmationBoxBackDrop {
+  z-index: @normalModalbackDropZindex+40;
+}
+
+.confirmationBox.in.modal {
+  z-index: @normalModalbackDropZindex+50;
+}
