@@ -6,25 +6,9 @@
   </PropertyGroup>
   <PropertyGroup>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Allow compilation errors for missing dependencies -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
   </PropertyGroup>
-  
-  <!-- Temporarily exclude files that depend on missing services -->
-  <ItemGroup>
-    <Compile Remove="ClientApp/components/**/*Controller.cs" />
-    <Compile Remove="ClientApp/components/**/*Service.cs" />  
-    <Compile Remove="ClientApp/components/**/*Manager.cs" />
-    <Compile Remove="ClientApp/components/**/*Handler.cs" />
-    <Compile Remove="ClientApp/components/**/*Observer.cs" />
-    <Compile Remove="ClientApp/components/**/*Provider.cs" />
-    <Compile Remove="ClientApp/components/**/*Updater.cs" />
-    <Compile Remove="Utilities/Audit.cs" />
-    <Compile Remove="Utilities/emailSenderService.cs" />
-    <Compile Remove="Utilities/DistributedLockService.cs" />
-    <Compile Remove="Utilities/RedLockService.cs" />
-    <Compile Remove="Utilities/CustomDomainManager.cs" />
-    <Compile Remove="reactWebUtils/**/*.cs" />
-    <Compile Remove="Controllers/HomeController.cs" />
-  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="AWSSDK.Route53" Version="3.7.400" />
