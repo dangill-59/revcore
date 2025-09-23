@@ -30,7 +30,7 @@ namespace components.licensing
                 if (string.IsNullOrWhiteSpace(privateKey))
                     return null;
 
-                var crypto = new RSACryptoServiceProvider();
+                var crypto = RSA.Create();
                 crypto.FromXmlStringCore(privateKey);
                 return crypto.ToXmlStringCore(false);
             }
@@ -145,7 +145,7 @@ namespace components.licensing
 
                         if (String.IsNullOrWhiteSpace(_config.myPrivateKey))
                         {
-                            var key = new RSACryptoServiceProvider();
+                            var key = RSA.Create();
                             _config.myPrivateKey = key.ToXmlStringCore(true);
                             configChanged = true;
                         }
