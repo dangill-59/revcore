@@ -12,12 +12,14 @@ using Polly.Extensions.Http;
 using reactBase;
 using Utilities;
 using Microsoft.AspNetCore.Builder;
-using MongoDbService;
-using RevRepositoryServices;
+// TODO: Add proper NuGet packages for these services
+// using MongoDbService;
+// using RevRepositoryServices;
 using Microsoft.AspNetCore.Http;
 using components.launchNative;
 using components.workspace;
-using revMQAbstractions;
+// TODO: Add proper NuGet package for revMQAbstractions
+// using revMQAbstractions;
 using Microsoft.AspNetCore.Diagnostics;
 using Newtonsoft.Json;
 using Microsoft.AspNetCore.StaticFiles;
@@ -291,8 +293,9 @@ builder.Services.AddScoped<components.listPages.ObservePageTask>();
 builder.Services.AddTransient<Utilities.IEmailSenderService, Utilities.EmailSenderService>();
 builder.Services.AddTransient<components.permissions.IProvisionAuthProvider, components.permissions.ProvisionAuthProvider>();
 
-builder.Services.AddScoped<revElasticSearch.IESMapper, revElasticSearch.ProjectMapper>();
-builder.Services.AddTransient<revElasticSearch.IRevEsClient, revElasticSearch.ESClient>();
+// TODO: Add proper NuGet package for revElasticSearch services
+// builder.Services.AddScoped<revElasticSearch.IESMapper, revElasticSearch.ProjectMapper>();
+// builder.Services.AddTransient<revElasticSearch.IRevEsClient, revElasticSearch.ESClient>();
 
 //builder.Services.addRevWorkspaceResolver(Configuration);
 
