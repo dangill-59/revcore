@@ -266,13 +266,21 @@ namespace components.workspace
         public static IStorageProvider storageProviderFromWorkspaceId(IConfiguration configuration, reactBase.ICacheProvider cache, string id)
         {
             var multiConfig = configuration.GetSection("multisite");
+            var storageType = multiConfig["storage"];
 
-            switch (multiConfig["storage"])
+            // Default to 'file' if storage configuration is missing or empty
+            if (string.IsNullOrWhiteSpace(storageType))
+            {
+                storageType = "file";
+            }
+
+            switch (storageType)
             {
                 case "s3":
                     return new S3StorageProvider(configuration, cache, revdbNameFromWorkspaceId(id));
                 case "azure":
                     return new AzureBlobStorageProvider(configuration, cache, revdbNameFromWorkspaceId(id));
+                case "file":
                 default:
                     return new FileStorageProvider(configuration, revdbNameFromWorkspaceId(id));
             }

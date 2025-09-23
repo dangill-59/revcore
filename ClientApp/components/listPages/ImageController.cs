@@ -38,14 +38,21 @@ namespace components.listPages
         {
             _signer = signer;
             var multiConfig = configuration.GetSection("multisite");
+            var storageType = multiConfig["storage"];
 
             _configuration = configuration;
 
-            _useS3 = multiConfig["storage"] == "s3";
-            _useAzure = multiConfig["storage"] == "azure";
+            // Default to 'file' if storage configuration is missing or empty
+            if (string.IsNullOrWhiteSpace(storageType))
+            {
+                storageType = "file";
+            }
+
+            _useS3 = storageType == "s3";
+            _useAzure = storageType == "azure";
 
             //create my own file storage provider, as for multi site this contoller is called without user logged in
-            switch (multiConfig["storage"])
+            switch (storageType)
             {
                 case "s3":
                     _storage = new S3StorageProvider(configuration, cache);
@@ -53,6 +60,7 @@ namespace components.listPages
                 case "azure":
                     _storage = new AzureBlobStorageProvider(configuration, cache);
                     break;
+                case "file":
                 default:
                     _storage = new FileStorageProvider(configuration);
                     break;
@@ -134,9 +142,16 @@ namespace components.listPages
             if (null == _chunkUploadModel)
             {
                 var configSection = config.GetSection("s3Storage");
+                var storageType = config["multisite:storage"];
 
-                var usingS3 = config["multisite:storage"] == "s3";
-                var usingAzure = config["multisite:storage"] == "azure";
+                // Default to 'file' if storage configuration is missing or empty
+                if (string.IsNullOrWhiteSpace(storageType))
+                {
+                    storageType = "file";
+                }
+
+                var usingS3 = storageType == "s3";
+                var usingAzure = storageType == "azure";
 
                 _chunkUploadModel = new ChunkUploadModel
                 {
