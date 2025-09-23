@@ -1,0 +1,15 @@
+obj/
+bin/
+*.user
+*.cache
+*.dll
+*.exe
+*.pdb
+*.suo
+*.sln.docstates
+*.userprefs
+.DS_Store
+.vs/
+node_modules/
+dist/
+wwwroot/dist/

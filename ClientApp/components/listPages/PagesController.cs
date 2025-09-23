@@ -93,9 +93,17 @@ namespace components.listPages
             _mq = mq;
             _jobWaiter = pageadoneWaiter;
 
-            _usingS3 = configuration["multisite:storage"] == "s3";
-            _usingAzure = configuration["multisite:storage"] == "azure";
-            _usingCloud = configuration["multisite:storage"] == "s3" || configuration["multisite:storage"] == "azure";
+            var storageType = configuration["multisite:storage"];
+            
+            // Default to 'file' if storage configuration is missing or empty
+            if (string.IsNullOrWhiteSpace(storageType))
+            {
+                storageType = "file";
+            }
+
+            _usingS3 = storageType == "s3";
+            _usingAzure = storageType == "azure";
+            _usingCloud = storageType == "s3" || storageType == "azure";
         }
 
         readonly static string DEFAULT_SCAN_BATCH = "defaultscanbatch";
