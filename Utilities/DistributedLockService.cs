@@ -14,11 +14,11 @@ namespace Utilities
     {
         /// <summary>
         /// Creates a distributed lock using redis
-        /// usage using(var mylock = withLock<T>()){  mylock.lockedObject;   } 
+        /// usage using(var mylock = withLock&lt;T&gt;()){  mylock.lockedObject;   } 
         /// </summary>
-        /// <typeparam name="T"></typeparam>
+        /// <typeparam name="T">The type of object to lock</typeparam>
         /// <param name="createModelDelegate_willbecalledMultipleTimes">The Task to create the model</param>
-        /// <returns></returns>
+        /// <returns>A locked object wrapper</returns>
         Task<ITheLock<T>> withLock<T>(Func<Task<T>> createModelDelegate_willbecalledMultipleTimes, TimeSpan? wait = null, TimeSpan? expiry = null) where T : IHasId, IHasCreated;
     }
 
