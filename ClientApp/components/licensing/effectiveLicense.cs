@@ -87,7 +87,7 @@ namespace components.licensing
             {
                 if (null == _BuildDate)
                 {
-                    var bstr = commonInterfaces.resources.buildDate;
+                    var bstr = commonInterfaces.Resources.buildDate;
                     _BuildDate = DateTime.Parse(bstr, new System.Globalization.CultureInfo("en-US", false));
                 }
                 return _BuildDate.Value;
