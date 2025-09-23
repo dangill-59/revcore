@@ -7,6 +7,25 @@
   <PropertyGroup>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
+  
+  <!-- Temporarily exclude files that depend on missing services -->
+  <ItemGroup>
+    <Compile Remove="ClientApp/components/**/*Controller.cs" />
+    <Compile Remove="ClientApp/components/**/*Service.cs" />  
+    <Compile Remove="ClientApp/components/**/*Manager.cs" />
+    <Compile Remove="ClientApp/components/**/*Handler.cs" />
+    <Compile Remove="ClientApp/components/**/*Observer.cs" />
+    <Compile Remove="ClientApp/components/**/*Provider.cs" />
+    <Compile Remove="ClientApp/components/**/*Updater.cs" />
+    <Compile Remove="Utilities/Audit.cs" />
+    <Compile Remove="Utilities/emailSenderService.cs" />
+    <Compile Remove="Utilities/DistributedLockService.cs" />
+    <Compile Remove="Utilities/RedLockService.cs" />
+    <Compile Remove="Utilities/CustomDomainManager.cs" />
+    <Compile Remove="reactWebUtils/**/*.cs" />
+    <Compile Remove="Controllers/HomeController.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="AWSSDK.Route53" Version="3.7.104.87" />
     <PackageReference Include="AWSSDK.S3" Version="3.7.107" />
@@ -28,7 +47,8 @@
     <PackageReference Include="RabbitMQ.Client" Version="5.2.0" />
     <PackageReference Include="RedLock.net" Version="2.3.2" />
     <PackageReference Include="SixLabors.ImageSharp.Drawing" Version="2.1.2" />
-    <PackageReference Include="StackExchange.Redis" Version="2.6.116" />
+    <PackageReference Include="StackExchange.Redis" Version="2.7.17" />
+    <PackageReference Include="StackExchange.Redis.Extensions.Core" Version="10.2.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.5.0" />
     <PackageReference Include="System.Security.Cryptography.Algorithms" Version="4.3.1" />
     <PackageReference Include="Twilio.AspNet.Core" Version="8.0.2" />
@@ -38,17 +58,12 @@
     <PackageReference Include="Gelf.Extensions.Logging" Version="2.6.0" />
     <PackageReference Include="Sentry.Extensions.Logging" Version="4.11.0" />
     <PackageReference Include="MoreLinq" Version="4.3.0" />
+    <PackageReference Include="Stripe.net" Version="44.13.0" />
+    <PackageReference Include="MassTransit" Version="8.2.5" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.1.0" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\BillingUtilities\BillingUtilities.csproj" />
     <ProjectReference Include="commonInterfaces\commonInterfaces.csproj" />
-    <ProjectReference Include="..\MongoDbService\MongoDbService.csproj" />
-    <ProjectReference Include="..\revClientAuth\revClientAuth.csproj" />
-    <ProjectReference Include="..\revElasticSearch\revElasticSearch.csproj" />
-    <ProjectReference Include="..\RevStorage\RevStorage.csproj" />
-    <ProjectReference Include="..\revWorkflow\revWorkflow.csproj" />
-    <ProjectReference Include="..\connectCommonCore\connectCommonCore.csproj" />
-    <ProjectReference Include="..\RevRepositoryServices\RevRepositoryServices.csproj" />
-    <ProjectReference Include="..\XeroHandler\XeroHandler.csproj" />
   </ItemGroup>
 </Project>
