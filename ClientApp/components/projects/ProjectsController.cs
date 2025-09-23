@@ -150,7 +150,7 @@ namespace components.Projects
             catch (Exception ex)
             {
                 if (!ex.Message.Contains("index_not_found_exception"))
-                    throw ex;
+                    throw;
 
                 _logger.LogError($"the ES index didnot exist");
             }
