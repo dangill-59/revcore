@@ -41,7 +41,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\BillingUtilities\BillingUtilities.csproj" />
-    <ProjectReference Include="..\commonInterfaces\commonInterfaces.csproj" />
+    <ProjectReference Include="commonInterfaces\commonInterfaces.csproj" />
     <ProjectReference Include="..\MongoDbService\MongoDbService.csproj" />
     <ProjectReference Include="..\revClientAuth\revClientAuth.csproj" />
     <ProjectReference Include="..\revElasticSearch\revElasticSearch.csproj" />
