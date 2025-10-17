@@ -18,6 +18,7 @@ using MongoDB.Driver;
 using Newtonsoft.Json;
 using reactBase;
 using restUpdate;
+using RevStorage;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats;
 using SixLabors.ImageSharp.PixelFormats;
@@ -30,7 +31,7 @@ namespace components.annotations
     [Authorize]
     public class AnnotationsController : Controller
     {
-        readonly IStorageProvider _storage;
+        readonly IRevStorageService _storage;
         private readonly ILogger _logger;
         readonly commonInterfaces.IRevDatabase _revDb;
         readonly IWorkspaceResolver _resolver;
@@ -38,7 +39,7 @@ namespace components.annotations
         public AnnotationsController(
             commonInterfaces.IRevDatabase revDb,
             IWorkspaceResolver resolver,
-            IStorageProvider storage,
+            IRevStorageService storage,
             ILogger<AnnotationsController> logger)
         {
             _logger = logger;
@@ -160,7 +161,7 @@ namespace components.annotations
 
             var annoData = new AnnoDataModel
             {
-                imageDataUrl = StreamToDataURL(_storage.getImageStream(orginalImageId))
+                imageDataUrl = StreamToDataURL(await _storage.getImageStreamAsync(orginalImageId))
             };
 
             found = await _storage.searchByPrefixAsync(anno.annoId);
@@ -170,7 +171,7 @@ namespace components.annotations
                 return annoData;
             }
 
-            annoData.dataUrl = StreamToDataURL(_storage.getImageStream(anno.annoId));
+            annoData.dataUrl = StreamToDataURL(await _storage.getImageStreamAsync(anno.annoId));
 
             return annoData;
         }
@@ -179,7 +180,7 @@ namespace components.annotations
         {
             ensureWriteAccess(anno.pageId);
 
-            var pageStream = _storage.getImageStream(anno.pageId);
+            var pageStream = await _storage.getImageStreamAsync(anno.pageId);
 
             var found = await _storage.searchByPrefixAsync(anno.originalNoMutations);
             if (found.Length < 1)
@@ -259,14 +260,14 @@ namespace components.annotations
             if (found.Length == 1)
             {
                 _logger.LogDebug($"anno.noAnnoId -> {anno.noAnnoId} exisis we need to rotate that as well");
-                await rotateAndSave(_storage.getImageStream(anno.noAnnoId), anno.noAnnoId, left);
+                await rotateAndSave(await _storage.getImageStreamAsync(anno.noAnnoId), anno.noAnnoId, left);
             }
 
             found = await _storage.searchByPrefixAsync(anno.annoId);
             if (found.Length == 1)
             {
                 _logger.LogDebug($"anno.annoId -> {anno.annoId} exisis we need to rotate that as well");
-                await rotateAndSave(_storage.getImageStream(anno.annoId), anno.annoId, left);
+                await rotateAndSave(await _storage.getImageStreamAsync(anno.annoId), anno.annoId, left);
             }
 
         }
@@ -307,7 +308,7 @@ namespace components.annotations
 
                 annoStream.Seek(0, SeekOrigin.Begin);
 
-                var orgStream = _storage.getImageStream(orginalImageId);
+                var orgStream = await _storage.getImageStreamAsync(orginalImageId);
 
                 orgStream.Seek(0, SeekOrigin.Begin);
                 using (var originalImage = Image.Load<Rgba32>(orgStream))
