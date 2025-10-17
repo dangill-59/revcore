@@ -17,6 +17,7 @@ using MimeKit.Text;
 using MongoDB.Driver;
 using reactBase;
 using restUpdate;
+using RevStorage;
 using revCore2site.Controllers.Models;
 using revMQAbstractions;
 using StackExchange.Redis.Extensions.Core.Abstractions;
@@ -35,7 +36,7 @@ namespace components.printApp
 
         readonly reactBase.ICacheProvider _cache;
 
-        readonly IStorageProvider _storage;
+        readonly IRevStorageService _storage;
 
         private readonly ILogger _logger;
 
@@ -49,20 +50,20 @@ namespace components.printApp
 
         readonly commonInterfaces.IRevAuthDatabase _authDb;
 
-        readonly IRedisCacheClient _redis;
+        readonly IRedisDatabase _redis;
 
 
         public emailController(
 
             reactBase.ICacheProvider cache,
             IDownLoaderService downloader,
-            IStorageProvider storage,
+            IRevStorageService storage,
             commonInterfaces.IRevAuthDatabase authDb,
 
             IWaitforJob pageadoneWaiter,
             commonInterfaces.IRevDatabase revDb,
             IEmailSenderService emailSender,
-            IRedisCacheClient redis,
+            IRedisDatabase redis,
             ILogger<emailController> logger,
             IConfiguration configuration)
         {
@@ -100,7 +101,7 @@ namespace components.printApp
                 if (!string.IsNullOrWhiteSpace(result.result.resultPath))
                 {
 
-                    result.stream = _storage.getImageStream(result.result.resultPath);
+                    result.stream = await _storage.getImageStreamAsync(result.result.resultPath);
 
                     if (result.stream.Position != 0)
                     {
@@ -116,7 +117,7 @@ namespace components.printApp
                 _logger.LogError(ex.Message);
                 if (ex.Message.Contains("This email cannot be sent because the attachment size exceeds"))
                 {
-                    await _redis.Db0.AddAsync($"emailJob_${jobId}", "size_exceeds", TimeSpan.FromMinutes(15));
+                    await _redis.AddAsync($"emailJob_${jobId}", "size_exceeds", TimeSpan.FromMinutes(15));
                 }
                 //throw new Exception(ex.Message);
                 throw ex;
@@ -139,7 +140,7 @@ namespace components.printApp
                 if (!string.IsNullOrWhiteSpace(result.result.resultPath))
                 {
 
-                    result.stream = _storage.getImageStream(result.result.resultPath);
+                    result.stream = await _storage.getImageStreamAsync(result.result.resultPath);
 
                     if (result.stream.Position != 0)
                         result.stream.Seek(0, SeekOrigin.Begin);
@@ -276,7 +277,7 @@ namespace components.printApp
             {
                 for (var i = 0; i < 20; i++)
                 {
-                    var exists = await _redis.Db0.GetAsync<string>($"emailJob_${req.pdfJobResult.pdfId}");
+                    var exists = await _redis.GetAsync<string>($"emailJob_${req.pdfJobResult.pdfId}");
                     if (string.IsNullOrWhiteSpace(exists))
                     {
                         _logger.LogInformation($"{$"emailJob_${req.pdfJobResult.pdfId}"} does not exists in reddis catch");
@@ -307,12 +308,12 @@ namespace components.printApp
                 if (!string.IsNullOrWhiteSpace(req.pdfJobResult.pdfId))
                 {
                     var rediskey = $"emailJob_${req.pdfJobResult.pdfId}";
-                    await _redis.Db0.AddAsync(rediskey, "started", TimeSpan.FromMinutes(15));
+                    await _redis.AddAsync(rediskey, "started", TimeSpan.FromMinutes(15));
 
                     var preparedData = await getPdfStream(req.pdfJobResult.pdfId);
                     if (preparedData.stream.Length > (limit.attachmentSize * 1024 * 1024))
                     {
-                        await _redis.Db0.AddAsync(rediskey, "size_exceeds", TimeSpan.FromMinutes(15));
+                        await _redis.AddAsync(rediskey, "size_exceeds", TimeSpan.FromMinutes(15));
                         throw new Exception($"This email cannot be sent because the attachment size exceeds {limit.attachmentSize} MB");
                     }
 
@@ -336,7 +337,7 @@ namespace components.printApp
                         var nonWbadded = await Task.WhenAll(preparedData.result.nonWebFiles.Select(async (pId, i) =>
                         {
                             var ext = Path.GetExtension(pId);
-                            var imageStm = _storage.getImageStream(_storage.getKey(pId));
+                            var imageStm = await _storage.getImageStreamAsync(_storage.getKey(pId));
 
                             var cachestm = imageStm;
                             if (imageStm.CanSeek)
@@ -381,7 +382,7 @@ namespace components.printApp
                     var originaladded = await Task.WhenAll(req.pdfJobResult.orginalpageIds.Select(async (pId, i) =>
                     {
                         var ext = Path.GetExtension(pId);
-                        var imageStm = _storage.getImageStream(_storage.getKey(pId));
+                        var imageStm = await _storage.getImageStreamAsync(_storage.getKey(pId));
                         var cachestm = imageStm;
                         if (imageStm.CanSeek)
                         {
@@ -427,7 +428,7 @@ namespace components.printApp
                 _logger.LogDebug($"checking for nonweeb files done {DateTime.Now}");
                 await _emailSender.sendEmailAsync(req.mailtoList, req.subject, req.message, attachments, req.ccList);
 
-                await _redis.Db0.AddAsync($"emailJob_${req.pdfJobResult.pdfId}", "finished", TimeSpan.FromMinutes(15));
+                await _redis.AddAsync($"emailJob_${req.pdfJobResult.pdfId}", "finished", TimeSpan.FromMinutes(15));
             }
             catch (Exception ex)
             {
@@ -438,7 +439,7 @@ namespace components.printApp
                 else if (ex.Message != "Still waiting for Job to finish")
                 {
                     _logger.LogInformation($"Removing {$"emailJob_${req.pdfJobResult.pdfId}"} from catch");
-                    await _redis.Db0.RemoveAsync($"emailJob_${req.pdfJobResult.pdfId}");
+                    await _redis.RemoveAsync($"emailJob_${req.pdfJobResult.pdfId}");
                 }
                 _logger.LogError($"failed with exception {ex.Message}");
             }
