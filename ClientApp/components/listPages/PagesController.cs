@@ -39,7 +39,6 @@ namespace components.listPages
     public class PagesController : Controller
     {
         readonly commonInterfaces.IRevDatabase _revDb;
-        readonly IStorageProvider _storageV1;
         readonly IRevStorageService _storageV2;
         readonly restUpdate.IMultipartRequestHandler _multipartHandler;
         readonly IWorkspaceResolver _resolver;
@@ -66,7 +65,6 @@ namespace components.listPages
             IPageDeleteService pageDeleteService,
             IConfiguration configuration,
 
-            IStorageProvider storage,
             IRevStorageService storageV2,
             IDistributedLockService distributedLock,
             IDistributedCache distributedCache,
@@ -81,7 +79,6 @@ namespace components.listPages
             _revDb = revDb;
             _configuration = configuration;
             _multipartHandler = multipartHandler;
-            _storageV1 = storage;
             _storageV2 = storageV2;
 
 
@@ -136,15 +133,15 @@ namespace components.listPages
         {
             var pageId = System.Web.HttpUtility.UrlDecode(encodedPageId);
 
-            //pageId =page/24d996ec-013b-48f4-946b-0fbf302bbfbd/converted-1.png 
+            //pageId =page/24d996ec-013b-48f4-946b-0fbf302bbfbd/converted-1.png
             //var folderName = System.IO.Path.GetDirectoryName(pageId).Replace('\\','/');
             //var originalFileName = $"{folderName}/original.*";
 
-            var found = (await _storageV1.ensureMediaExistsAsync(pageId)).key;
+            var found = (await _storageV2.MediaExistsAsync(pageId)).key;
 
             //var ext = System.IO.Path.GetExtension(found).TrimStart('.');
 
-            var stream = _storageV1.getImageStream(found);
+            var stream = await _storageV2.getImageStreamAsync(found);
             stream.Seek(0, System.IO.SeekOrigin.Begin);
 
             return new FileStreamResult(stream, "application/octet-stream")
@@ -535,7 +532,7 @@ namespace components.listPages
                         return new
                         {
                             pageId = pageToFinaize.pageId,
-                            mediaFound = await _storageV1.ensureMediaExistsAsync(pageToFinaize.pageId)
+                            mediaFound = await _storageV2.MediaExistsAsync(pageToFinaize.pageId)
                         };
                     }
                     catch (Exception ex)
@@ -895,7 +892,7 @@ namespace components.listPages
 
             var ret = await newPageidForUploadAsync(ext);
 
-            await _storageV1.SaveStreamAsync(ret.id, file.OpenReadStream());
+            await _storageV2.SaveStreamAsync(ret.id, file.OpenReadStream());
 
             return ret;
         }
@@ -959,19 +956,19 @@ namespace components.listPages
 
                 if (!string.IsNullOrWhiteSpace(options.aws_url))
                 {
-                    //we are using minio.. set up 
+                    //we are using minio.. set up
                     var origin = this.originFromURL("/api/pages", _logger);
 
-                    ret.keyForDirectUpload = _storageV1.createPresignedUrl(newPageID, true, origin);
+                    ret.keyForDirectUpload = _storageV2.createPresignedUrl(newPageID, true, origin);
                 }
                 else
                 {
-                    ret.keyForDirectUpload = _storageV1.createPresignedUrl(newPageID, true);
+                    ret.keyForDirectUpload = _storageV2.createPresignedUrl(newPageID, true);
                 }
             }
             else
             {
-                ret.keyForDirectUpload = _storageV1.keyForDirectUpload(newPageID);
+                ret.keyForDirectUpload = _storageV2.keyForDirectUpload(newPageID);
             }
 
             return ret;
@@ -1043,7 +1040,7 @@ namespace components.listPages
                 }
             }
 
-            var result = _storageV1.createPresignedUrl(blobName);
+            var result = _storageV2.createPresignedUrl(blobName);
             return result;
         }
 
@@ -1123,7 +1120,7 @@ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
                 throw new ExceptionWithCode("invalid request", System.Net.HttpStatusCode.Forbidden);
             }
 
-            var dummyageId = _storageV1.keyForDirectUpload("page/");
+            var dummyageId = _storageV2.keyForDirectUpload("page/");
 
             var uploadConfig = this.uploadOptions();
 
