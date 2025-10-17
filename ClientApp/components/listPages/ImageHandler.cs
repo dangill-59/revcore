@@ -125,7 +125,7 @@ namespace components.listPages
 
         public PageHolderModel FixPageHolderForWire(PageHolderModel value)
         {
-            var _storage = _serviceProvider.GetService(typeof(reactBase.IStorageProvider)) as reactBase.IStorageProvider;
+            var _storage = _serviceProvider.GetService(typeof(RevStorage.IRevStorageService)) as RevStorage.IRevStorageService;
             return FixPageHolderForWireStatic(_logger, value, _distributedCache, pid => _storage.publicPath(pid));
         }
 

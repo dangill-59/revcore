@@ -467,7 +467,7 @@ namespace components.workspace
 			try
 			{
 				_logger.LogInformation($"RemoveWorkpace : deleting images for workspace: {existing.name}");
-				var storage = _provider.GetRequiredService<IStorageProvider>();
+				var storage = _provider.GetRequiredService<RevStorage.IRevStorageService>();
 				await storage.RemoveAllContentsAsync();
 			}
 			catch (Exception ex)
