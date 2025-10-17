@@ -95,7 +95,7 @@ namespace components.listPages
 					new SignedHash { hash = hash, ticks = ticks }, TimeSpan.FromMinutes(15));
 				*/
                 var overRidenEP = String.Empty;
-                var options = uploadOptions(_configuration);
+                var options = uploadOptions();
 
                 if (!string.IsNullOrWhiteSpace(options.aws_url))
                 {
@@ -128,6 +128,7 @@ namespace components.listPages
         }
 
         static ChunkUploadModel _chunkUploadModel = null;
+
         public static ChunkUploadModel uploadOptions(IConfiguration config)
         {
             if (null == _chunkUploadModel)
@@ -149,7 +150,11 @@ namespace components.listPages
             }
 
             return _chunkUploadModel;
+        }
 
+        public ChunkUploadModel uploadOptions()
+        {
+            return uploadOptions(_configuration);
         }
 
     }

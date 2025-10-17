@@ -18,19 +18,19 @@ namespace components.listPages
     public class hasRevImages : restUpdate.HasPropertyBase<PageHolderModel>
     {
         readonly reactBase.ICacheProvider _cache;
-        readonly IServiceProvider _serviceProvider;
+        readonly RevStorage.IRevStorageService _storage;
         readonly IDistributedCache _distributedCache;
         readonly ILogger _logger;
 
         public hasRevImages(
             reactBase.ICacheProvider cache,
-            IServiceProvider serviceProvider,
+            RevStorage.IRevStorageService storage,
             IDistributedCache distributedCache,
             IConfiguration configuration,
             ILogger<hasRevImages> logger
             )
         {
-            _serviceProvider = serviceProvider;
+            _storage = storage;
             _cache = cache;
             _distributedCache = distributedCache;
             _logger = logger;
@@ -95,7 +95,6 @@ namespace components.listPages
 
         public PageHolderModel FixPageHolderForWire(PageHolderModel value)
         {
-            var _storage = _serviceProvider.GetService(typeof(RevStorage.IRevStorageService)) as RevStorage.IRevStorageService;
             return FixPageHolderForWireStatic(_logger, value, _distributedCache, pid => _storage.publicPath(pid));
         }
 
