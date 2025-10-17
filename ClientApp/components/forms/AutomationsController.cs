@@ -13,11 +13,11 @@ using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using reactBase;
 using restUpdate;
+using RevStorage;
 using Utilities;
 using MongoDB.Driver;
 using revMQAbstractions;
 using Microsoft.AspNetCore.Http;
-using static Org.BouncyCastle.Bcpg.Attr.ImageAttrib;
 using Pipelines.Sockets.Unofficial.Arenas;
 
 namespace components.forms
@@ -28,7 +28,7 @@ namespace components.forms
     public class AutomationsController : Controller
     {
         readonly commonInterfaces.IRevDatabase _revDb;
-        readonly IStorageProvider _storage;
+        readonly IRevStorageService _storage;
 
         private readonly ILogger _logger;
         readonly ICacheProvider _cache;
@@ -43,7 +43,7 @@ namespace components.forms
             IRevMQBus mq,
             workspace.IWaitforJob pageadoneWaiter,
             workspace.IWorkspaceResolver respolver,
-            commonInterfaces.IRevDatabase revDb, IStorageProvider storage,
+            commonInterfaces.IRevDatabase revDb, IRevStorageService storage,
             ILogger<AutomationsController> logger)
         {
             _cache = cache;
@@ -127,7 +127,7 @@ namespace components.forms
                     var newPageID = $"{newPageFolder}/{Path.GetFileName(p.id)}";
 
                     using (var tmp = _cache.createCacheStream())
-                    using (var istm = _storage.getImageStream(p.id))
+                    using (var istm = await _storage.getImageStreamAsync(p.id))
                     {
                         await istm.CopyToAsync(tmp);
                         tmp.Seek(0, SeekOrigin.Begin);
