@@ -30,6 +30,11 @@ namespace reactBase
         public long size { get; set; }
     }
 
+    /// <summary>
+    /// OBSOLETE: Use RevStorage.IStorageService (workspace-agnostic) or RevStorage.IRevStorageService (workspace-scoped) instead.
+    /// This interface is kept only for backward compatibility with legacy gallery code.
+    /// </summary>
+    [Obsolete("Use RevStorage.IStorageService or RevStorage.IRevStorageService instead. This interface will be removed in v5.0.", false)]
     public interface IStorageProvider
     {
         /// <summary>
@@ -116,10 +121,15 @@ namespace reactBase
 
     }
 
+    /// <summary>
+    /// OBSOLETE: FileStorageProvider has NotImplementedException on critical methods and is not used in production.
+    /// Use RevStorage.WorkspaceAgnosticStorageService instead.
+    /// </summary>
+    [Obsolete("FileStorageProvider is not fully implemented and not used in production. Will be removed in v5.0.", false)]
     public class FileStorageProvider : IStorageProvider
     {
         /// <summary>
-        /// The folder where we store image data 
+        /// The folder where we store image data
         /// </summary>
         readonly string _imageRoot;
 
@@ -289,6 +299,12 @@ namespace reactBase
         }
     }
 
+    /// <summary>
+    /// OBSOLETE: Use RevStorage.WorkspaceAgnosticStorageService for workspace-agnostic operations
+    /// or RevStorage.RevStorageService for workspace-scoped operations.
+    /// This class is kept only for backward compatibility with legacy gallery code.
+    /// </summary>
+    [Obsolete("Use RevStorage.WorkspaceAgnosticStorageService or RevStorage.RevStorageService instead. Will be removed in v5.0.", false)]
     public class S3StorageProvider : IStorageProvider
     {
         readonly bool _publicReadable = false;
@@ -627,6 +643,12 @@ namespace reactBase
         }
     }
 
+    /// <summary>
+    /// OBSOLETE: Use RevStorage.WorkspaceAgnosticStorageService for workspace-agnostic operations
+    /// or RevStorage.AzureBlobStorageService for workspace-scoped operations.
+    /// This class is kept only for backward compatibility with legacy gallery code.
+    /// </summary>
+    [Obsolete("Use RevStorage.WorkspaceAgnosticStorageService or RevStorage.AzureBlobStorageService instead. Will be removed in v5.0.", false)]
     public class AzureBlobStorageProvider : IStorageProvider
     {
         readonly ICacheProvider _cache;

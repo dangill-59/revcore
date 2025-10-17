@@ -197,6 +197,9 @@ if (!SetupMultiSite(builder.Services))
     //throw new NotImplementedException();
 }
 
+// Register workspace-agnostic storage service for ImageController (anonymous access)
+builder.Services.AddSingleton<RevStorage.IStorageService, RevStorage.WorkspaceAgnosticStorageService>();
+
 builder.Services.addRevServices(builder.Configuration);
 
 // Register ElasticSearch services

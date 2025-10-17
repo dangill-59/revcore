@@ -20,8 +20,7 @@ namespace components.listPages
     [Route("api/[controller]")]
     public class ImageController : Controller
     {
-
-        readonly IStorageProvider _storage;
+        readonly RevStorage.IStorageService _storage;
         readonly bool _useS3;
         readonly bool _useAzure;
         readonly ITaskSignerservice _signer;
@@ -29,39 +28,22 @@ namespace components.listPages
         readonly IConfiguration _configuration;
         readonly ILogger _logger;
 
-        public ImageController(IConfiguration configuration,
+        public ImageController(
+            RevStorage.IStorageService storage,
+            IConfiguration configuration,
             ITaskSignerservice signer,
-            reactBase.ICacheProvider cache,
             IDistributedCache distributedCache,
             ILogger<ImageController> logger)
         {
+            _storage = storage;
             _signer = signer;
-            var multiConfig = configuration.GetSection("multisite");
-
             _configuration = configuration;
-
-            _useS3 = multiConfig["storage"] == "s3";
-            _useAzure = multiConfig["storage"] == "azure";
-
-            //create my own file storage provider, as for multi site this contoller is called without user logged in
-            switch (multiConfig["storage"])
-            {
-                case "s3":
-                    _storage = new S3StorageProvider(configuration, cache);
-                    break;
-                case "azure":
-                    _storage = new AzureBlobStorageProvider(configuration, cache);
-                    break;
-                default:
-                    _storage = new FileStorageProvider(configuration);
-                    break;
-            }
-
             _distributedCache = distributedCache;
-
             _logger = logger;
 
-
+            var multiConfig = configuration.GetSection("multisite");
+            _useS3 = multiConfig["storage"] == "s3";
+            _useAzure = multiConfig["storage"] == "azure";
         }
 
 
@@ -104,7 +86,7 @@ namespace components.listPages
 
                 }
 
-                return new RedirectResult(_storage.createPresignedUrl(publicPathORImageId: path, overrideEndPoint: overRidenEP));
+                return new RedirectResult(_storage.createPresignedUrl(publicPathORkey: path, overrideEndPoint: overRidenEP));
             }
             else if (_useAzure)
             {
@@ -117,7 +99,7 @@ namespace components.listPages
             else
             {
                 var path = System.IO.Path.Combine(pathAr.ToArray());
-                var imageStream = _storage.getImageStream(_storage.getKey(path));
+                var imageStream = await _storage.getImageStreamAsync(_storage.getKey(path));
                 return new FileStreamResult(imageStream, ContentTypefromExt(System.IO.Path.GetExtension(path)));
             }
         }
