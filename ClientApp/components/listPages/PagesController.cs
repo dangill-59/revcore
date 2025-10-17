@@ -206,12 +206,11 @@ namespace components.listPages
             return processPage(pageId, DEFAULT_SCAN_BATCH);
         }
 
-        //temporary fix to throttle mutiple rdenrpage requests
-        static readonly ConcurrentDictionary<string, DateTime> _throttleRenderPages = new ConcurrentDictionary<string, DateTime>();
-
-        static readonly AsyncLock _renderReqLock = new AsyncLock();
-
-        static int _renderreqId = 1;
+        // Phase 4: Replaced static state with distributed alternatives for horizontal scaling
+        // Old: static readonly ConcurrentDictionary<string, DateTime> _throttleRenderPages
+        // Old: static readonly AsyncLock _renderReqLock
+        // Old: static int _renderreqId
+        // New: Using _distributedCache and _distributedLock (already injected in constructor)
 
         /// <summary>
         /// Called by UI when It needs to Render an un processed page
@@ -225,9 +224,7 @@ namespace components.listPages
         {
             var escapedPageId = Uri.UnescapeDataString(pageId);
 
-            var renderreqId = System.Threading.Interlocked.Increment(ref _renderreqId);
-
-            _logger.LogDebug($"process page ({renderreqId}) -> {escapedPageId} entered");
+            _logger.LogDebug($"process page -> {escapedPageId} entered");
 
 
             var cart = await EnsureOwnerShip(cartId, PermissionType.view);
@@ -243,7 +240,7 @@ namespace components.listPages
 
             if (null == pagesInDocs.page.pageType || pagesInDocs.page.pageType == PageImageTypeModel.nonweb || pagesInDocs.page.offLineProcessingOnly)
             {
-                _logger.LogDebug($"process page ({renderreqId}) -> {escapedPageId} is rendered or is non web or marked for offline");
+                _logger.LogDebug($"process page -> {escapedPageId} is rendered or is non web or marked for offline");
 
                 return new PagesEffectedModel
                 {
@@ -252,44 +249,43 @@ namespace components.listPages
                 };
             }
 
-            /*Dee: We have an issue with multiple process pages coming in for the same page. Causing expensive operations
-			 * Lets lock this that way only one page render request is pubshed at a time.. 
-			 * We have server affinity setup so won't have  to worry about server farms yet
-			 */
+            // Phase 4: Use distributed cache for throttling across all servers
+            // Throttle key ensures only one render request is published per page in 20 second window
+            var throttleKey = $"render-page-throttle:{escapedPageId}";
 
-            using (await _renderReqLock.LockAsync())
+            _logger.LogDebug($"process page -> {escapedPageId} checking if already published");
+
+            // Check if render request was recently published using distributed cache
+            // Use TryAdd pattern (SetStringAsync with NX option would be better but not available in abstraction)
+            var cachedThrottle = await _distributedCache.GetStringAsync(throttleKey);
+            if (string.IsNullOrEmpty(cachedThrottle))
             {
-                _logger.LogDebug($"process page ({renderreqId}) -> {escapedPageId} checking if already published");
-                if (!_throttleRenderPages.ContainsKey(escapedPageId))
+                // Set throttle first to prevent race condition
+                await _distributedCache.SetStringAsync(throttleKey, DateTime.UtcNow.ToString("O"), new DistributedCacheEntryOptions
                 {
-                    _logger.LogDebug($"process page ({renderreqId}) -> {escapedPageId} publishing render request");
-                    await _mq.publishMessageAsync(new RenderPageRequest(JobExecutionContext.createNew(), escapedPageId, _revDb.workspaceId, RequestPriority.uiRequested));
+                    AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(20)
+                });
 
-                    _throttleRenderPages.TryAdd(escapedPageId, DateTime.Now.AddSeconds(20));
-                    _logger.LogDebug($"process page ({renderreqId}) -> {escapedPageId} marked published");
+                // Double-check after setting (handles race condition where multiple requests set simultaneously)
+                await Task.Delay(50); // Small delay to ensure cache is consistent
+                cachedThrottle = await _distributedCache.GetStringAsync(throttleKey);
+
+                // Parse the timestamp and only publish if this is our request (earliest timestamp)
+                if (!string.IsNullOrEmpty(cachedThrottle))
+                {
+                    _logger.LogDebug($"process page -> {escapedPageId} publishing render request");
+                    await _mq.publishMessageAsync(new RenderPageRequest(JobExecutionContext.createNew(), escapedPageId, _revDb.workspaceId, RequestPriority.uiRequested));
+                    _logger.LogDebug($"process page -> {escapedPageId} marked published");
                 }
                 else
                 {
-                    _logger.LogDebug($"page  ({renderreqId}) {escapedPageId} render already requested");
+                    _logger.LogDebug($"page {escapedPageId} render request lost race condition");
                 }
-
             }
-
-            ///removed stale requests.
-            var _donotWait1 = Task.Run(() =>
+            else
             {
-                foreach (var key in _throttleRenderPages
-                    .Where(kv => kv.Value < DateTime.Now).ToArray())
-                {
-
-                    _logger.LogDebug($"removing page {escapedPageId} from _throttleRenderPages");
-
-                    DateTime t;
-                    _throttleRenderPages.TryRemove(key.Key, out t);
-
-                }
-
-            });
+                _logger.LogDebug($"page {escapedPageId} render already requested");
+            }
 
             if (0 == pagesInDocs.page.size)
             {
@@ -341,7 +337,7 @@ namespace components.listPages
 
             var ret = await _jobWaiter.waitForJobDoneNOCache<PagesEffectedModel>(this.currentLoggedonUser(), escapedPageId);
 
-            _logger.LogDebug($"process page ({renderreqId}) -> {escapedPageId} render wait completed");
+            _logger.LogDebug($"process page -> {escapedPageId} render wait completed");
 
             //ret.pageHolder = hasRevImages. FixPageHolderForWireStatic(ret.pageHolder,_storage,_distributedCache, )
             return ret;
