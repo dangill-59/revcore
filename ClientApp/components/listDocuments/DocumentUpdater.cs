@@ -3,6 +3,7 @@ using commonInterfaces.dbDataTypes;
 using Microsoft.Extensions.Logging;
 using MongoDB.Driver;
 using reactBase;
+using RevStorage;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -31,12 +32,12 @@ namespace components.listDocuments
 
         public string theProjectId { get; }
 
-        readonly IStorageProvider _storage;
+        readonly IRevStorageService _storage;
 
         public DocumentUpdater(ILogger logger,
             external.IIntegrationsService intgService,
             ProjectAccessPermission restrictions,
-            IStorageProvider storage,
+            IRevStorageService storage,
             IRevDatabase revDb,
             string projectId)
         {
@@ -93,7 +94,7 @@ namespace components.listDocuments
 
             foreach (var p in unProcessedPages)
             {
-                p.id = (await _storage.ensureMediaExistsAsync(p.path.Replace("copy://", ""))).key;
+                p.id = (await _storage.MediaExistsAsync(p.path.Replace("copy://", ""))).key;
                 p.pageType = PageImageTypeModel.unprocessed;
             }
 

@@ -16,7 +16,7 @@ using MongoDB.Driver;
 using reactBase;
 using restUpdate;
 using revMQAbstractions;
-
+using RevStorage;
 using Utilities;
 
 namespace components.listDocuments
@@ -32,7 +32,7 @@ namespace components.listDocuments
         readonly external.IIntegrationsService _intgService;
         //readonly IRevEsHelper _esHelper;
         private readonly ILogger _logger;
-        readonly IStorageProvider _storage;
+        readonly IRevStorageService _storage;
         readonly IWorkspaceResolver _resolver;
         readonly components.listPages.IPageDeleteService _pageDeleteService;
         readonly IRevAudit _audit;
@@ -46,7 +46,7 @@ namespace components.listDocuments
             IRevMQBus mq,
             external.IIntegrationsService intgService,
             //IRevEsHelper esHelper,
-            IStorageProvider storage,
+            IRevStorageService storage,
             IRevAudit audit,
             components.listPages.IPageDeleteService pageDeleteService,
              ILogger<DocumentController> logger, IConfiguration configuration)
