@@ -11,8 +11,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="AWSSDK.Route53" Version="3.7.400" />
-    <PackageReference Include="AWSSDK.S3" Version="3.7.400" />
+    <PackageReference Include="AWSSDK.Route53" Version="3.7.402.7" />
+    <PackageReference Include="AWSSDK.S3" Version="3.7.402.7" />
     <PackageReference Include="Azure.Storage.Blobs" Version="12.22.0" />
     <PackageReference Include="ConcurrentHashSet" Version="1.3.0" />
     <PackageReference Include="Farmhash.Sharp" Version="0.9.0" />
@@ -32,7 +32,9 @@
     <PackageReference Include="RedLock.net" Version="2.3.2" />
     <PackageReference Include="SixLabors.ImageSharp.Drawing" Version="2.1.4" />
     <PackageReference Include="StackExchange.Redis" Version="2.8.24" />
-    <PackageReference Include="StackExchange.Redis.Extensions.Core" Version="11.0.0" />
+    <PackageReference Include="StackExchange.Redis.Extensions.Core" Version="10.2.0" />
+    <PackageReference Include="StackExchange.Redis.Extensions.AspNetCore" Version="10.2.0" />
+    <PackageReference Include="StackExchange.Redis.Extensions.Newtonsoft" Version="10.2.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="7.2.0" />
     <PackageReference Include="System.Security.Cryptography.Algorithms" Version="4.3.1" />
     <PackageReference Include="Twilio.AspNet.Core" Version="8.0.2" />
@@ -42,12 +44,24 @@
     <PackageReference Include="Gelf.Extensions.Logging" Version="2.6.0" />
     <PackageReference Include="Sentry.Extensions.Logging" Version="5.0.0" />
     <PackageReference Include="MoreLinq" Version="4.3.0" />
-    <PackageReference Include="Stripe.net" Version="44.13.0" />
-    <PackageReference Include="MassTransit" Version="8.2.5" />
+    <PackageReference Include="Stripe.net" Version="45.14.0" />
+    <PackageReference Include="MassTransit" Version="7.3.1" />
+    <PackageReference Include="MassTransit.Extensions.DependencyInjection" Version="7.3.1" />
+    <PackageReference Include="MassTransit.RabbitMQ" Version="7.3.1" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.2.0" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="commonInterfaces\commonInterfaces.csproj" />
+    <ProjectReference Include="..\commonInterfaces\commonInterfaces.csproj" />
+    <ProjectReference Include="..\BillingUtilities\BillingUtilities.csproj" />
+    <ProjectReference Include="..\connectCommonCore\connectCommonCore.csproj" />
+    <ProjectReference Include="..\MongoDbService\MongoDbService.csproj" />
+    <ProjectReference Include="..\revClientAuth\revClientAuth.csproj" />
+    <ProjectReference Include="..\revElasticSearch\revElasticSearch.csproj" />
+    <ProjectReference Include="..\RevRepositoryServices\RevRepositoryServices.csproj" />
+    <ProjectReference Include="..\RevStorage\RevStorage.csproj" />
+    <ProjectReference Include="..\revWorkflow\revWorkflow.csproj" />
+    <ProjectReference Include="..\workspaceResolver\workspaceResolver.csproj" />
+    <ProjectReference Include="..\XeroHandler\XeroHandler.csproj" />
   </ItemGroup>
 </Project>

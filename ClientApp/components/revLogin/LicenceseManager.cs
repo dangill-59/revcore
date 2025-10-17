@@ -11,7 +11,6 @@ using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using MoreLinq;
 using NeoSmart.AsyncLock;
-using Nest;
 using Newtonsoft.Json;
 using reactBase;
 using revMQAbstractions;
@@ -80,7 +79,7 @@ namespace components.revLogin
             {
                 //we also want to rest the generic token cahce to be in sync with the active workspace
                 //else if the workspace exprire time is less the generic time, it won't work
-                await _redis.Db0.AddAsync(tokenKeys.genericKey,
+                await _redis.AddAsync(tokenKeys.genericKey,
                     access_token_str,
                     inactivityTimeout
                     );
@@ -91,7 +90,7 @@ namespace components.revLogin
                     return;
                 }
 
-                await _redis.Db0.AddAsync(tokenKeys.workspaceKey,
+                await _redis.AddAsync(tokenKeys.workspaceKey,
                             access_token_str, inactivityTimeout);
 
                 Debug.Assert(null != dbWorkspace);
@@ -174,17 +173,17 @@ namespace components.revLogin
 
             //get the generic access Token eveytime so that we keep renewsing it's LifeTime
             //the workspace specific token exists to control custime workspace token expiration time
-            var access_token_str = await _redis.Db0.GetAsync<string>(tokenKeys.genericKey, slidingExpiration);
+            var access_token_str = await _redis.GetAsync<string>(tokenKeys.genericKey, slidingExpiration);
 
 
             if (!string.IsNullOrWhiteSpace(tokenKeys.workspaceKey))
             {
-                access_token_str = await _redis.Db0.GetAsync<string>(tokenKeys.workspaceKey, slidingExpiration);
+                access_token_str = await _redis.GetAsync<string>(tokenKeys.workspaceKey, slidingExpiration);
 
                 if (string.IsNullOrWhiteSpace(access_token_str))
                 {
                     _logger.LogDebug("we don't have a workspace specific token. Creating new ONE");
-                    access_token_str = await _redis.Db0.GetAsync<string>(tokenKeys.genericKey, slidingExpiration);
+                    access_token_str = await _redis.GetAsync<string>(tokenKeys.genericKey, slidingExpiration);
 
                     if (!string.IsNullOrWhiteSpace(access_token_str))
                     {
@@ -270,7 +269,7 @@ namespace components.revLogin
 
             var licSetKey = getworkSpaceLicSetKey(workspace.name);
 
-            await _redis.Db0.SetAddAsync(licSetKey, currentUserTokens);
+            await _redis.SetAddAsync(licSetKey, currentUserTokens);
 
             _workspaceLicenseGauge.WithLabels(workspace.name).Set(currentLocks.Length + 1);
         }
@@ -309,11 +308,11 @@ namespace components.revLogin
                 throw new ExceptionWithCode("the selected license lock was not found");
             }
 
-            await _redis.Db0.RemoveAsync(found.genericKey);
-            await _redis.Db0.RemoveAsync(found.workspaceKey);
+            await _redis.RemoveAsync(found.genericKey);
+            await _redis.RemoveAsync(found.workspaceKey);
 
             var licSetKey = getworkSpaceLicSetKey(workspace.name);
-            await _redis.Db0.SetRemoveAsync(licSetKey, found.workspaceKey);
+            await _redis.SetRemoveAsync(licSetKey, found.workspaceKey);
 
             currentLocks = currentLocks.Where(k => k.workspaceKey != keyToRemove).ToArray();
             _workspaceLicenseGauge.WithLabels(workspace.name).Set(currentLocks.Length);
@@ -345,19 +344,19 @@ namespace components.revLogin
 
             var licSetKey = getworkSpaceLicSetKey(workspace.name);
 
-            var currentLocks = (await _redis.Db0.SetMembersAsync<TokenCacheKeys>(licSetKey)).ToArray();
+            var currentLocks = (await _redis.SetMembersAsync<TokenCacheKeys>(licSetKey)).ToArray();
 
             var workspaceTokens = (await Task.WhenAll(currentLocks.Select(async key =>
             {
                 var ret = new
                 {
                     key,
-                    access_token = await _redis.Db0.GetAsync<string>(key.workspaceKey)
+                    access_token = await _redis.GetAsync<string>(key.workspaceKey)
                 };
 
                 if (null == ret.access_token)
                 {
-                    await _redis.Db0.SetRemoveAsync(licSetKey, key.workspaceKey);
+                    await _redis.SetRemoveAsync(licSetKey, key.workspaceKey);
                 }
 
                 return ret;
@@ -381,11 +380,11 @@ namespace components.revLogin
 
             _logger.LogDebug($"INvalidtaing casted token {tokens.licLock.userId} for workspace {workspace.name}");
 
-            await _redis.Db0.RemoveAsync(tokens.genericKey);
+            await _redis.RemoveAsync(tokens.genericKey);
 
             if (!string.IsNullOrWhiteSpace(tokens.workspaceKey))
             {
-                await _redis.Db0.RemoveAsync(tokens.workspaceKey);
+                await _redis.RemoveAsync(tokens.workspaceKey);
             }
 
             ///We call this to update any license locks

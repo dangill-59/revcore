@@ -14,7 +14,6 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using MongoDB.Driver;
-using Nest;
 using Newtonsoft.Json;
 using reactBase;
 using restUpdate;

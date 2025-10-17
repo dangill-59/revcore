@@ -20,11 +20,11 @@
       "launchBrowser": true,
       "environmentVariables": {
         "DEV_APPMODE": "alllocal",
-        "ASPNETCORE_URLS": "http://0.0.0.0:80",
+        "ASPNETCORE_URLS": "http://localhost:5000",
         "ASPNETCORE_preventHostingStartup": "true",
         "ASPNETCORE_ENVIRONMENT": "Development"
       },
-      "applicationUrl": "https://localhost:5001;http://localhost:80"
+      "applicationUrl": "https://localhost:5001;http://localhost:5000"
     }
   }
 }

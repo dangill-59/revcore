@@ -11,7 +11,6 @@ using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using MoreLinq;
 using NeoSmart.AsyncLock;
-using Nest;
 using Newtonsoft.Json;
 using reactBase;
 using revMQAbstractions;
@@ -92,7 +91,7 @@ namespace components.revLogin
 
         readonly IRevAudit _revAudit;
 
-        readonly IRedisCacheClient _redis;
+        readonly IRedisDatabase _redis;
 
 
 
@@ -109,7 +108,7 @@ namespace components.revLogin
 
             IRevMQBus mq,
             IRevAudit revAudit,
-            IRedisCacheClient redis,
+            IRedisDatabase redis,
             ITaskSignerservice signer,
             ILogger<JWTCreater> logger
             ) : base(timesvr, configuration)
