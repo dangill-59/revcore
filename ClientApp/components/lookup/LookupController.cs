@@ -6,7 +6,7 @@ using System.Net;
 using System.Reflection;
 using System.Threading.Tasks;
 using commonInterfaces.dbDataTypes;
-using Elasticsearch.Net;
+using OpenSearch.Net;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
@@ -119,7 +119,7 @@ namespace components.lookup
                 return new object[] { metadata, source };
             });
 
-            var respose = (await _esClient.lowlevelCient.BulkAsync<StringResponse>(PostData.String(ESClient.ESJsonfromObject(djson.SelectMany(s => s))))).Body;
+            var respose = (await _esClient.lowlevelCient.BulkAsync<OpenSearch.Net.StringResponse>(OpenSearch.Net.PostData.String(ESClient.ESJsonfromObject(djson.SelectMany(s => s))))).Body;
 
 
             var g = JsonConvert.DeserializeAnonymousType(respose, new { errors = true });
@@ -237,8 +237,8 @@ namespace components.lookup
             };
 
 
-            var response = (await _esClient.lowlevelCient.SearchAsync<StringResponse>(
-                _resolver.revContext.esIndexName, PostData.String(ESClient.ESJsonfromObject(new
+            var response = (await _esClient.lowlevelCient.SearchAsync<OpenSearch.Net.StringResponse>(
+                _resolver.revContext.esIndexName, OpenSearch.Net.PostData.String(ESClient.ESJsonfromObject(new
                 {
                     size = 0,
                     aggs = new

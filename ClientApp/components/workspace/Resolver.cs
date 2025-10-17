@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using MongoDB.Driver;
 using reactBase;
+using RevStorage;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -275,6 +276,59 @@ namespace components.workspace
                     return new AzureBlobStorageProvider(configuration, cache, revdbNameFromWorkspaceId(id));
                 default:
                     return new FileStorageProvider(configuration, revdbNameFromWorkspaceId(id));
+            }
+        }
+
+        /// <summary>
+        /// Creates an IRevStorageService instance for a specific workspace without HTTP context.
+        /// Used by background services like PageDeleteTask.
+        /// </summary>
+        public static RevStorage.IRevStorageService revStorageServiceFromWorkspaceId(
+            IConfiguration configuration,
+            reactBase.ICacheProvider cache,
+            string workspaceId,
+            Microsoft.Extensions.Logging.ILogger logger)
+        {
+            var multiConfig = configuration.GetSection("multisite");
+
+            // Create minimal workspace resolver with just the context
+            var minimalResolver = new MinimalWorkspaceResolver(workspaceId);
+
+            switch (multiConfig["storage"])
+            {
+                case "s3":
+                    return new RevStorage.RevStorageService(
+                        configuration,
+                        minimalResolver,
+                        logger as Microsoft.Extensions.Logging.ILogger<RevStorage.RevStorageService>,
+                        cache);
+                case "azure":
+                    return new RevStorage.AzureBlobStorageService(
+                        configuration,
+                        minimalResolver,
+                        logger as Microsoft.Extensions.Logging.ILogger<RevStorage.AzureBlobStorageService>,
+                        cache);
+                default:
+                    throw new NotImplementedException("File storage not yet implemented for IRevStorageService");
+            }
+        }
+
+        /// <summary>
+        /// Minimal workspace resolver for background services without HTTP context
+        /// </summary>
+        private class MinimalWorkspaceResolver : workspaceResolver.IRevWorkspaceResolver
+        {
+            public workspaceResolver.RevWorkspaceContext revContext { get; set; }
+            public object mqConsumerContext { get; set; }
+
+            public MinimalWorkspaceResolver(string workspaceId)
+            {
+                revContext = new workspaceResolver.RevWorkspaceContext(workspaceId);
+            }
+
+            public commonInterfaces.dbDataTypes.WorkspaceModel getCurrentWorkspace()
+            {
+                throw new NotImplementedException("MinimalWorkspaceResolver does not support getCurrentWorkspace - use for storage operations only");
             }
         }
 

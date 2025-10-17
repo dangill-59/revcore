@@ -13,6 +13,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using reactBase;
 using restUpdate;
+using RevStorage;
 using Utilities;
 
 
@@ -24,7 +25,7 @@ namespace components.listPages
         Task SetPagesForDeletionAsync(commonInterfaces.IRevDatabase revDb, PageImageModel[] pages, DateTime? deleteAfter = null, string? user = null,
             string? docId = null);
 
-        Task deleteOrphanedPages(commonInterfaces.IRevDatabase revDb, IStorageProvider storage);
+        Task deleteOrphanedPages(commonInterfaces.IRevDatabase revDb, IRevStorageService storage);
     }
 
     public class PageDeleteService : IPageDeleteService
@@ -64,9 +65,9 @@ namespace components.listPages
         }
 
         /// <summary>
-        /// 
+        ///
         /// </summary>
-        public async Task deleteOrphanedPages(commonInterfaces.IRevDatabase revDb, IStorageProvider storage)
+        public async Task deleteOrphanedPages(commonInterfaces.IRevDatabase revDb, IRevStorageService storage)
         {
             _logger.LogDebug("deleteOrphanedPages started");
 
@@ -212,7 +213,7 @@ namespace components.listPages
                                 var dbName = components.workspace.Resolver.revdbNameFromWorkspaceId(workSpace.id);
                                 await _pageDeleteService.deleteOrphanedPages(
                                     new MongoDbService.RevDatabase(components.workspace.Resolver.getMongoConnectionstring(_configuration), dbName, workSpace),
-                                    components.workspace.Resolver.storageProviderFromWorkspaceId(_configuration, _cache, workSpace.id)
+                                    components.workspace.Resolver.revStorageServiceFromWorkspaceId(_configuration, _cache, workSpace.id, _logger)
                                     );
 
                             }

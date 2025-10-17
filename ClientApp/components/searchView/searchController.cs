@@ -16,7 +16,7 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using MongoDB.Driver;
-using Nest;
+using OpenSearch.Client;
 using Newtonsoft.Json;
 using reactBase;
 using restUpdate;
@@ -887,8 +887,8 @@ namespace components.searchView
                     }
                 });
 
-                var response = (await _esClient.lowlevelCient.SearchAsync<Elasticsearch.Net.StringResponse>(
-                    _resolver.revContext.esIndexName, Elasticsearch.Net.PostData.String(SearchQuery))).Body;
+                var response = (await _esClient.lowlevelCient.SearchAsync<OpenSearch.Net.StringResponse>(
+                    _resolver.revContext.esIndexName, OpenSearch.Net.PostData.String(SearchQuery))).Body;
 
 
                 var results = JsonConvert.DeserializeAnonymousType(response, new
@@ -932,8 +932,8 @@ namespace components.searchView
         [HttpGet("hasDocuments")]
         public async Task<bool> hasDocumentsAsync()
         {
-            //var response = (await _esClient.lowlevelCient.IndicesStatsAsync<Elasticsearch.Net.StringResponse>(_resolver.revContext.esIndexName)).Body;
-            var response = (await _esClient.lowlevelCient.Indices.StatsAsync<Elasticsearch.Net.StringResponse>(_resolver.revContext.esIndexName)).Body;
+            //var response = (await _esClient.lowlevelCient.IndicesStatsAsync<OpenSearch.Net.StringResponse>(_resolver.revContext.esIndexName)).Body;
+            var response = (await _esClient.lowlevelCient.Indices.StatsAsync<OpenSearch.Net.StringResponse>(_resolver.revContext.esIndexName)).Body;
 
             var results = JsonConvert.DeserializeAnonymousType(response, new
             {

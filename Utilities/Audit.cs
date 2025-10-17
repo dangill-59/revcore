@@ -1,4 +1,4 @@
-﻿using Elasticsearch.Net;
+﻿using OpenSearch.Net;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json;
@@ -81,7 +81,7 @@ namespace Utilities
                 {
 
 
-                    var response = (await _esClient.lowlevelCient.IndexAsync<StringResponse>(
+                    var response = (await _esClient.lowlevelCient.IndexAsync<OpenSearch.Net.StringResponse>(
                         $"{_ESinstance.ToLower()}_{DateTime.Now.ToString("yyyy_MM")}", "auditLog", ESClient.ESJsonfromObject(new
                         {
                             action,

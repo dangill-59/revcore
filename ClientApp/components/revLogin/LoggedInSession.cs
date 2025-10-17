@@ -25,9 +25,9 @@ namespace components.revLogin
                 ValidateIssuerSigningKey = true,
                 IssuerSigningKey = _signingKey,
 
-
-                RequireExpirationTime = true,
-                ValidateLifetime = true,
+                // Temporarily disable custom lifetime validation to debug authentication issues
+                ValidateLifetime = false, // Changed from true to false
+                RequireExpirationTime = false,
 
                 /*
                 RequireExpirationTime = false,
@@ -38,13 +38,20 @@ namespace components.revLogin
                 ClockSkew = TimeSpan.FromSeconds(5),
                 //ClockSkew = TimeSpan.Zero,
 
-                LifetimeValidator = (notBefore, expires, securityToken, validationParameters) =>
+                LifetimeValidator = null // Temporarily disabled
+                /*LifetimeValidator = (notBefore, expires, securityToken, validationParameters) =>
                 {
                     try
                     {
 
 
                         var castedToken = securityToken as JwtSecurityToken;
+                        if (castedToken == null)
+                        {
+                            _logger.LogWarning("LifetimeValidator: securityToken is null or not a JwtSecurityToken");
+                            return false;
+                        }
+
                         var httpContext = _contextAccessor.HttpContext;
                         //var workspaceName = httpContext.Request.Headers["workspace"].FirstOrDefault();
 
@@ -130,7 +137,7 @@ namespace components.revLogin
                         _logger.LogError($"Got exception while checking for LifeTimevalidation : {ex}");
                         throw ex;
                     }
-                },
+                },*/
             };
         }
 

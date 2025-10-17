@@ -94,12 +94,12 @@ namespace Utilities
 
             var message = new MimeMessage();
 
-            message.To.AddRange(mailtoList.Select(x => new MailboxAddress(x)));
+            message.To.AddRange(mailtoList.Select(x => new MailboxAddress(x, x)));
 
             if (null != mailbCcList)
             {
                 //message.Bcc.AddRange(mailbCcList.Select(x => new MailboxAddress(x)));
-                message.Cc.AddRange(mailbCcList.Select(x => new MailboxAddress(x)));
+                message.Cc.AddRange(mailbCcList.Select(x => new MailboxAddress(x, x)));
             }
 
             if (string.IsNullOrWhiteSpace(emailSendername))

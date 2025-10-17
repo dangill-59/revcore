@@ -30,7 +30,7 @@ namespace components.licensing
                 if (string.IsNullOrWhiteSpace(privateKey))
                     return null;
 
-                var crypto = RSA.Create();
+                var crypto = new System.Security.Cryptography.RSACryptoServiceProvider();
                 crypto.FromXmlStringCore(privateKey);
                 return crypto.ToXmlStringCore(false);
             }
@@ -87,7 +87,7 @@ namespace components.licensing
             {
                 if (null == _BuildDate)
                 {
-                    var bstr = commonInterfaces.Resources.buildDate;
+                    var bstr = commonInterfaces.resources.buildDate;
                     _BuildDate = DateTime.Parse(bstr, new System.Globalization.CultureInfo("en-US", false));
                 }
                 return _BuildDate.Value;
@@ -145,7 +145,7 @@ namespace components.licensing
 
                         if (String.IsNullOrWhiteSpace(_config.myPrivateKey))
                         {
-                            var key = RSA.Create();
+                            var key = new System.Security.Cryptography.RSACryptoServiceProvider();
                             _config.myPrivateKey = key.ToXmlStringCore(true);
                             configChanged = true;
                         }

@@ -27,13 +27,6 @@ namespace components.workspace
             _billing = billing;
         }
 
-        public async override Task Consume(ConsumeContext<MQWorkspaceChangedMessage> context)
-        {
-            await base.Consume(context);
-
-            await _billing.removeSubscriptionFromCacheAsync(context.Message.changedWorkspaceName);
-        }
-
 
     }
 }

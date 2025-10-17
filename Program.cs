@@ -12,14 +12,12 @@ using Polly.Extensions.Http;
 using reactBase;
 using Utilities;
 using Microsoft.AspNetCore.Builder;
-// TODO: Add proper NuGet packages for these services
-// using MongoDbService;
-// using RevRepositoryServices;
+using MongoDbService;
+using RevRepositoryServices;
 using Microsoft.AspNetCore.Http;
 using components.launchNative;
 using components.workspace;
-// TODO: Add proper NuGet package for revMQAbstractions
-// using revMQAbstractions;
+using revMQAbstractions;
 using Microsoft.AspNetCore.Diagnostics;
 using Newtonsoft.Json;
 using Microsoft.AspNetCore.StaticFiles;
@@ -38,8 +36,8 @@ builder.Configuration.AddJsonFile(Utilities.TaskSignerservice.KEYCONFIGFILE, opt
 
 #if DEBUG
 
-builder.Configuration.AddJsonFile("appsettings.devCommon.json", optional: false, reloadOnChange: false);
-builder.Configuration.AddJsonFile("appsettings.noSVN.json", optional: false, reloadOnChange: false);
+builder.Configuration.AddJsonFile("appsettings.devCommon.json", optional: true, reloadOnChange: false);
+builder.Configuration.AddJsonFile("appsettings.noSVN.json", optional: true, reloadOnChange: false);
 
 var customMode = Environment.GetEnvironmentVariable("DEV_APPMODE");
 if (!string.IsNullOrWhiteSpace(customMode))
@@ -205,6 +203,14 @@ if (!SetupMultiSite(builder.Services))
 }
 
 builder.Services.addRevServices(builder.Configuration);
+
+// Register ElasticSearch services
+builder.Services.AddSingleton<revElasticSearch.IRevEsClient>(sp =>
+{
+    var logger = sp.GetRequiredService<ILogger<revElasticSearch.UpdateDocTask>>();
+    return new revElasticSearch.ESClient(builder.Configuration, logger);
+});
+builder.Services.AddScoped<revElasticSearch.IESMapper, revElasticSearch.ProjectMapper>();
 
 builder.Services.addRepositoryService(builder.Configuration);
 
@@ -404,3 +410,4 @@ app.UseEndpoints(endpoints =>
 });
 
 app.Run();
+
