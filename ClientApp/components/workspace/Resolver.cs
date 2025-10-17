@@ -50,8 +50,6 @@ namespace components.workspace
     {
         WorkSpaceDb dbNamefromWorkSpace();
 
-        IStorageProvider storageProviderFromWorkspace(reactBase.ICacheProvider cache);
-
         /// <summary>
         /// gets the current workspace from httpcontext also ensure workspace access
         /// </summary>
@@ -70,52 +68,6 @@ namespace components.workspace
         /// <param name="forDuration"></param>
         /// <returns></returns>
         Task AllowServerAccess(string wkSpaceName, TimeSpan forDuration);
-    }
-
-    public interface IMQSpaceResolver
-    {
-        IStorageProvider getStorageProvider(string workspaceId);
-        MongoDbService.RevDatabase getRevDb(string workspaceId);
-    }
-
-    /// <summary>
-    /// This resolved db and storage from workspace id.
-    /// Used by IhotsedServices
-    /// 
-    /// </summary>
-    public class MQSpaceResolver : IMQSpaceResolver
-    {
-        readonly ILogger _logger;
-        readonly IConfiguration _configuration;
-        readonly reactBase.ICacheProvider _cache;
-        readonly commonInterfaces.IRevAuthDatabase _authDb;
-
-        public MQSpaceResolver(
-            IConfiguration configuration,
-            reactBase.ICacheProvider cache,
-            commonInterfaces.IRevAuthDatabase authDb,
-            ILogger<MQSpaceResolver> logger
-            )
-        {
-            _logger = logger;
-            _configuration = configuration;
-            _authDb = authDb;
-            _cache = cache;
-        }
-
-        public IStorageProvider getStorageProvider(string workspaceId)
-        {
-            return Resolver.storageProviderFromWorkspaceId(_configuration, _cache, workspaceId);
-        }
-
-        public MongoDbService.RevDatabase getRevDb(string workspaceId)
-        {
-            var workSpace = _authDb.getQueryable<WorkspaceModel>().Single(w => w.id == workspaceId);
-
-            var dbName = components.workspace.Resolver.revdbNameFromWorkspaceId(workSpace.id);
-            return new MongoDbService.RevDatabase(Resolver.getMongoConnectionstring(_configuration), dbName, workSpace);
-        }
-
     }
 
     public class AuthSpaceResolver : IAuthWorkspaceResolver
@@ -248,11 +200,6 @@ namespace components.workspace
             }
         }
 
-        public IStorageProvider storageProviderFromWorkspace(reactBase.ICacheProvider cache)
-        {
-            return storageProviderFromWorkspaceId(_configuration, cache, getCurrentWorkspace().id);
-        }
-
         public WorkSpaceDb dbNamefromWorkSpace()
         {
             var currentWorkspace = getCurrentWorkspace();
@@ -262,21 +209,6 @@ namespace components.workspace
                 dbName = revdbNameFromWorkspaceId(currentWorkspace.id),
                 workspaceId = currentWorkspace.id
             };
-        }
-
-        public static IStorageProvider storageProviderFromWorkspaceId(IConfiguration configuration, reactBase.ICacheProvider cache, string id)
-        {
-            var multiConfig = configuration.GetSection("multisite");
-
-            switch (multiConfig["storage"])
-            {
-                case "s3":
-                    return new S3StorageProvider(configuration, cache, revdbNameFromWorkspaceId(id));
-                case "azure":
-                    return new AzureBlobStorageProvider(configuration, cache, revdbNameFromWorkspaceId(id));
-                default:
-                    return new FileStorageProvider(configuration, revdbNameFromWorkspaceId(id));
-            }
         }
 
         /// <summary>

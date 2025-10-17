@@ -36,14 +36,12 @@ namespace components.workspace
         readonly billing.ISubscriberBillingInfo _billingService;
         readonly string _currentInstanceFQN = null;
         readonly permissions.IProvisionAuthProvider _userProvisioner;
-        readonly IMQSpaceResolver _mqResolver;
         readonly IRevMQBus _mq;
 
         readonly IRevAudit _audit = null;
 
         public WorkspacesController(
             commonInterfaces.IRevAuthDatabase authDb,
-            IMQSpaceResolver mqResolver,
             ITaskSignerservice signer,
             IConfiguration configuration, IWorkspaceResolver resolver,
             IJWTCreater jwtCreater,
@@ -72,8 +70,6 @@ namespace components.workspace
             _customDomainMgr = customDomainMgr;
 
             _audit = audit;
-
-            _mqResolver = mqResolver;
 
             var enabled = multiConfig["enabled"];
             if (String.IsNullOrWhiteSpace(enabled) || enabled.ToLower() != "true")
@@ -192,7 +188,12 @@ namespace components.workspace
 
             try
             {
-                var revDb = _mqResolver.getRevDb(_resolver.getCurrentWorkspace().id);
+                var workspace = _resolver.getCurrentWorkspace();
+                var dbName = components.workspace.Resolver.revdbNameFromWorkspaceId(workspace.id);
+                var revDb = new MongoDbService.RevDatabase(
+                    components.workspace.Resolver.getMongoConnectionstring(_configuration),
+                    dbName,
+                    workspace);
                 var collection = revDb.getCollection<DocumentModel>();
                 var pendinQ = collection.Find(d => d.catalogued != true && d.isPlaceHolder != true);
                 var pedning = await pendinQ.CountDocumentsAsync();

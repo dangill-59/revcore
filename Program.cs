@@ -109,11 +109,6 @@ bool SetupMultiSite(IServiceCollection services)
     services.AddSingleton<components.workspace.IWorkspaceResolver, components.workspace.Resolver>();
     services.AddSingleton<components.workspace.IAuthWorkspaceResolver, components.workspace.AuthSpaceResolver>();
 
-    services.AddTransient<IStorageProvider>(provider =>
-    {
-        return provider.GetService<components.workspace.IWorkspaceResolver>().storageProviderFromWorkspace(provider.GetService<ICacheProvider>());
-    });
-
     if (storageType == "azure")
         builder.Services.AddScoped<RevStorage.IRevStorageService, RevStorage.AzureBlobStorageService>();
     else //s3
@@ -274,8 +269,6 @@ builder.Services.AddSignalR().AddRedis(builder.Configuration["redis:Configuratio
 
 
 ///OLD RabbitQ services
-builder.Services.AddTransient<components.workspace.IMQSpaceResolver, components.workspace.MQSpaceResolver>();
-
 
 builder.Services.AddRevMQ<RevSiteWorkspaceChanged>("revServer", cfg =>
 {
