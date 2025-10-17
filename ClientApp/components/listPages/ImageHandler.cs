@@ -17,29 +17,21 @@ namespace components.listPages
 {
     public class hasRevImages : restUpdate.HasPropertyBase<PageHolderModel>
     {
-        //readonly reactBase.IStorageProvider _storage;
         readonly reactBase.ICacheProvider _cache;
-
-        //readonly ITaskSignerservice _signer;
         readonly IServiceProvider _serviceProvider;
-        //readonly IWorkspaceResolver _resolver;
         readonly IDistributedCache _distributedCache;
         readonly ILogger _logger;
 
         public hasRevImages(
             reactBase.ICacheProvider cache,
-             IServiceProvider serviceProvider,
-            //  ITaskSignerservice signer,
+            IServiceProvider serviceProvider,
             IDistributedCache distributedCache,
-            //IWorkspaceResolver resolver,
             IConfiguration configuration,
             ILogger<hasRevImages> logger
             )
         {
             _serviceProvider = serviceProvider;
             _cache = cache;
-            //_signer = signer;
-            //_resolver = resolver;
             _distributedCache = distributedCache;
             _logger = logger;
         }
@@ -83,14 +75,7 @@ namespace components.listPages
 
                 var allPathsInGrant = value.pages.Select(page =>
                 {
-                    //var publicPath = _storage.publicPath(page.id);
-
                     var publicPath = publicPathFromId(page.id);
-
-                    //creating signed hash takes way to long.
-                    /*var signedHash = _signer.createSignedHash(publicPath);
-					page.path = $"/api/image/{Uri.EscapeDataString(publicPath)}?holder={value.id}&ticks={signedHash.ticks}&hash={signedHash.hash}";
-					*/
 
                     page.path = $"/api/image/{Uri.EscapeDataString(publicPath)}?holder={value.id}&grant={escapedGrant}";
 
@@ -101,22 +86,7 @@ namespace components.listPages
 
                 distributedCache.GrantAccessToPages(logger, pageAccessGrant, allPathsInGrant);
 
-
                 value.pages = value.pages.OrderBy(p => p.orderNumber);
-
-                /*
-				value.ocrStatus = OCRStatusModel.compelete;
-				if (null != value.pages.Where(p => p.ocrStatus != OCRStatusModel.compelete).FirstOrDefault())
-				{
-					value.ocrStatus = OCRStatusModel.none;
-
-					if (null != value.pages.Where(p => p.ocrStatus == OCRStatusModel.started).FirstOrDefault())
-					{
-						value.ocrStatus = OCRStatusModel.started;
-					}
-
-				}
-				*/
             }
 
 
