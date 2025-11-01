@@ -72,7 +72,7 @@ class FormsToolBar extends React.Component<ViewProps, {}> {
     if (listAutomationsAsync && listAutomationsAsync.result && selectedProject)
       availableAutomations = _.filter(
         listAutomationsAsync.result,
-        (a) => a.projectId == selectedProject.id,
+        (a) => a.projectId == selectedProject.id && a.name && a.name.trim().length > 0,
       );
 
     const editorProps = { listDocsHelper: listDocsHelper, listPagesHelper: listPagesHelper };
