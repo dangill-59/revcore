@@ -92,6 +92,7 @@ namespace components.revLogin
         readonly IRevAudit _revAudit;
 
         readonly IRedisDatabase _redis;
+        readonly IDistributedCache _distributedCache;
 
 
 
@@ -109,6 +110,7 @@ namespace components.revLogin
             IRevMQBus mq,
             IRevAudit revAudit,
             IRedisDatabase redis,
+            IDistributedCache distributedCache,
             ITaskSignerservice signer,
             ILogger<JWTCreater> logger
             ) : base(timesvr, configuration)
@@ -120,6 +122,7 @@ namespace components.revLogin
 
             _effectiveLic = effectiveLic;
             _redis = redis;
+            _distributedCache = distributedCache;
             _signer = signer;
             _mq = mq;
 
@@ -179,7 +182,7 @@ namespace components.revLogin
 
         }
 
-        TimeSpan workspaceInactivityTimeout(WorkspaceModel workspace)
+        async Task<TimeSpan> workspaceInactivityTimeoutAsync(WorkspaceModel workspace)
         {
             if (null == workspace)
             {
@@ -198,7 +201,14 @@ namespace components.revLogin
                 ret = _defaultInactivityTimeOut;
             }
 
-            _mapWorkspaceSlidigExpirations[workspace.name] = ret;
+            // Store in distributed cache for horizontal scaling
+            var expirationKey = $"workspace-jwt-expiration:{workspace.name}";
+            await _distributedCache.SetStringAsync(expirationKey, ret.ToString(),
+                new DistributedCacheEntryOptions
+                {
+                    // Cache the expiration setting for 1 hour
+                    AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(1)
+                });
 
             return ret;
         }
@@ -209,46 +219,52 @@ namespace components.revLogin
 
 
 
-        readonly static ConcurrentDictionary<string, DateTime> _activatedWorkspaces
-                                            = new ConcurrentDictionary<string, DateTime>();
-        readonly AsyncLock _workspaceActivatorLock = new AsyncLock();
+        // Phase 4 Extension: Removed static state for horizontal scaling
+        // Old: static readonly ConcurrentDictionary<string, DateTime> _activatedWorkspaces
+        // Old: readonly AsyncLock _workspaceActivatorLock
+        // New: Using _distributedCache for cross-server workspace activation tracking
         async Task ActivateWorkspace(string workspaceName)
         {
             try
             {
-                using (await _workspaceActivatorLock.LockAsync())
+                if (string.IsNullOrWhiteSpace(workspaceName))
+                    throw new ArgumentNullException(nameof(workspaceName));
+
+                // Use distributed cache for workspace activation throttling (30 minute window)
+                var activationKey = $"workspace-activated:{workspaceName}";
+                var cachedActivation = await _distributedCache.GetStringAsync(activationKey);
+
+                if (!string.IsNullOrEmpty(cachedActivation))
                 {
-                    if (string.IsNullOrWhiteSpace(workspaceName))
-                        throw new ArgumentNullException(nameof(workspaceName));
-
-                    DateTime lastActivated;
-                    if (!_activatedWorkspaces.TryGetValue(workspaceName, out lastActivated))
+                    // Check if activation was recent (within 30 minutes)
+                    if (DateTime.TryParse(cachedActivation, out DateTime lastActivated))
                     {
-                        _logger.LogDebug($"workspace {workspaceName} never activated");
-                        lastActivated = DateTime.MinValue;
+                        if (DateTime.UtcNow < lastActivated.AddMinutes(30))
+                        {
+                            _logger.LogDebug($"workspace {workspaceName} already activated in the last 30 min (at {lastActivated:O})");
+                            return;
+                        }
                     }
-
-                    if (DateTime.Now < lastActivated.AddMinutes(30))
-                    {
-                        _logger.LogDebug($"workspace {workspaceName} already activating in the last 30 min");
-                        return;
-                    }
-
-
-                    _logger.LogDebug($"Activating workspace {workspaceName}");
-
-                    await _mq.ActivateWorkspace(workspaceName);
-
-                    _activatedWorkspaces[workspaceName] = DateTime.Now;
-
                 }
+
+                _logger.LogDebug($"Activating workspace {workspaceName}");
+
+                // Set activation timestamp in distributed cache before calling ActivateWorkspace
+                // This prevents race condition where multiple servers try to activate simultaneously
+                await _distributedCache.SetStringAsync(activationKey, DateTime.UtcNow.ToString("O"),
+                    new DistributedCacheEntryOptions
+                    {
+                        AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(30)
+                    });
+
+                await _mq.ActivateWorkspace(workspaceName);
+
+                _logger.LogDebug($"workspace {workspaceName} activation completed");
             }
             catch (Exception ex)
             {
                 _logger.LogError($"Exception while activating workspace {workspaceName}. : {ex}");
             }
-
-
         }
 
 
@@ -302,7 +318,12 @@ namespace components.revLogin
             IEnumerable<KeyValuePair<ClaimNames, string>> requestedClaims,
             TimeSpan? validSec = null, Guid? recycleJtiId = null)
         {
-            return createForWorkspace(_workSpaceResolver.getAuthenticationWorkspace(), Login, requestedClaims, validSec, recycleJtiId);
+            var workspace = _workSpaceResolver.getAuthenticationWorkspace();
+
+            // Phase 4: Activate workspace when creating JWT to ensure MQ services can connect
+            ActivateWorkspace(workspace.name).GetAwaiter().GetResult();
+
+            return createForWorkspace(workspace, Login, requestedClaims, validSec, recycleJtiId);
         }
 
 

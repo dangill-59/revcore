@@ -57,6 +57,9 @@ namespace components.listPages
         readonly IRevMQBus _mq;
         readonly IWaitforJob _jobWaiter;
 
+        // Phase 4: Anti-recursion guard to prevent stack overflow
+        private static readonly ConcurrentDictionary<string, byte> _activeProcessPageCalls = new ConcurrentDictionary<string, byte>();
+
         public PagesController(commonInterfaces.IRevDatabase revDb,
             IRevMQBus mq,
             IWorkspaceResolver resolver,
@@ -224,7 +227,21 @@ namespace components.listPages
         {
             var escapedPageId = Uri.UnescapeDataString(pageId);
 
-            _logger.LogDebug($"process page -> {escapedPageId} entered");
+            // Phase 4: Anti-recursion guard to prevent stack overflow
+            if (!_activeProcessPageCalls.TryAdd(escapedPageId, 0))
+            {
+                _logger.LogWarning($"process page -> {escapedPageId} is already being processed (recursion detected), returning early");
+                var cartForDuplicate = await EnsureOwnerShip(cartId, PermissionType.view);
+                return new PagesEffectedModel
+                {
+                    pageHolder = cartForDuplicate,
+                    effectedPageIds = new[] { pageId }
+                };
+            }
+
+            try
+            {
+                _logger.LogDebug($"process page -> {escapedPageId} entered");
 
 
             var cart = await EnsureOwnerShip(cartId, PermissionType.view);
@@ -273,6 +290,10 @@ namespace components.listPages
                 // Parse the timestamp and only publish if this is our request (earliest timestamp)
                 if (!string.IsNullOrEmpty(cachedThrottle))
                 {
+                    // Phase 4: Activate workspace before publishing message to ensure imageProcMQ connects to workspace vhost
+                    var workspace = _resolver.getCurrentWorkspace();
+                    await _mq.ActivateWorkspace(workspace.name);
+
                     _logger.LogDebug($"process page -> {escapedPageId} publishing render request");
                     await _mq.publishMessageAsync(new RenderPageRequest(JobExecutionContext.createNew(), escapedPageId, _revDb.workspaceId, RequestPriority.uiRequested));
                     _logger.LogDebug($"process page -> {escapedPageId} marked published");
@@ -335,13 +356,34 @@ namespace components.listPages
 
 
 
+            // Phase 1: When in-process image processing is enabled, don't wait for RabbitMQ response
+            // The ImageProcessingBackgroundService processes pages directly in the API process
+            var inProcessEnabled = _configuration.GetValue<bool>("ImageProcessing:InProcess:Enabled", false);
+
+            if (inProcessEnabled)
+            {
+                _logger.LogDebug($"process page -> {escapedPageId} in-process mode enabled, returning immediately for frontend polling");
+
+                // Return immediately - frontend will poll again to check status
+                return new PagesEffectedModel
+                {
+                    pageHolder = cart,
+                    effectedPageIds = new[] { pageId }
+                };
+            }
+
             var ret = await _jobWaiter.waitForJobDoneNOCache<PagesEffectedModel>(this.currentLoggedonUser(), escapedPageId);
 
             _logger.LogDebug($"process page -> {escapedPageId} render wait completed");
 
             //ret.pageHolder = hasRevImages. FixPageHolderForWireStatic(ret.pageHolder,_storage,_distributedCache, )
             return ret;
-
+            }
+            finally
+            {
+                // Phase 4: Remove anti-recursion guard when method completes
+                _activeProcessPageCalls.TryRemove(escapedPageId, out _);
+            }
         }
         /// <summary>
         /// 

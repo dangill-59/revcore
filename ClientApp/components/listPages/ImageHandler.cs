@@ -21,19 +21,22 @@ namespace components.listPages
         readonly RevStorage.IRevStorageService _storage;
         readonly IDistributedCache _distributedCache;
         readonly ILogger _logger;
+        readonly workspaceResolver.IRevWorkspaceResolver _workspaceResolver;
 
         public hasRevImages(
             reactBase.ICacheProvider cache,
             RevStorage.IRevStorageService storage,
             IDistributedCache distributedCache,
             IConfiguration configuration,
-            ILogger<hasRevImages> logger
+            ILogger<hasRevImages> logger,
+            workspaceResolver.IRevWorkspaceResolver workspaceResolver
             )
         {
             _storage = storage;
             _cache = cache;
             _distributedCache = distributedCache;
             _logger = logger;
+            _workspaceResolver = workspaceResolver;
         }
 
         protected override void FixForWireOtherTypes(object value, Controller controller)
@@ -54,12 +57,12 @@ namespace components.listPages
         /// <param name="value"></param>
         /// <returns></returns>
         public static PageHolderModel FixPageHolderForWireStatic(ILogger logger, PageHolderModel value,
-            IDistributedCache distributedCache, Func<string, string> publicPathFromId)
+            IDistributedCache distributedCache, Func<string, string> publicPathFromId, string workspaceId)
         {
             if (null == value)
                 return value;
 
-            //sure we will send these sorted. 
+            //sure we will send these sorted.
             if (null != value.pages)
             {
 
@@ -75,12 +78,28 @@ namespace components.listPages
 
                 var allPathsInGrant = value.pages.Select(page =>
                 {
-                    var publicPath = publicPathFromId(page.id);
+                    // Phase 4: Use web-displayable PNG version if page has been processed
+                    var pageIdForDisplay = page.id;
+                    if (page.pageType == null && page.id.Contains("/original.pdf"))
+                    {
+                        // Page has been processed (pageType == null means web-displayable)
+                        // Use the converted PNG image instead of original PDF
+                        pageIdForDisplay = page.id.Replace("/original.pdf", "/web.png");
+                    }
 
-                    page.path = $"/api/image/{Uri.EscapeDataString(publicPath)}?holder={value.id}&grant={escapedGrant}";
+                    // Phase 4 Extension: Prepend workspace prefix to match imageProcMQ upload path
+                    // imageProcMQ uploads to: rev_dev/rev_{workspaceId}/page/.../web.png
+                    // We pass: rev_{workspaceId}/page/.../web.png (WorkspaceAgnosticStorageService adds rev_dev/)
+                    var workspaceScopedPath = $"rev_{workspaceId}/{pageIdForDisplay}";
+
+                    // Phase 4: Pass the workspace-scoped key to /api/image/
+                    // The /api/image/ endpoint uses WorkspaceAgnosticStorageService which adds StorageRoot
+                    page.path = $"/api/image/{Uri.EscapeDataString(workspaceScopedPath)}?holder={value.id}&grant={escapedGrant}";
 
                     page.orderNumber = value.pageOrders.ContainsKey(page.id) ? value.pageOrders[page.id] : value.pages.Count();
-                    return publicPath;
+
+                    // Phase 4 Extension: Return the workspace-scoped key for the access grant
+                    return workspaceScopedPath;
 
                 }).ToArray();
 
@@ -95,7 +114,8 @@ namespace components.listPages
 
         public PageHolderModel FixPageHolderForWire(PageHolderModel value)
         {
-            return FixPageHolderForWireStatic(_logger, value, _distributedCache, pid => _storage.publicPath(pid));
+            var workspaceId = _workspaceResolver.revContext?.workspaceId ?? throw new InvalidOperationException("Workspace context not available");
+            return FixPageHolderForWireStatic(_logger, value, _distributedCache, pid => _storage.publicPath(pid), workspaceId);
         }
 
         protected override object fixForWire(PageHolderModel value, Controller controller)

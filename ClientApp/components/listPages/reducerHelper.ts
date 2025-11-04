@@ -342,9 +342,17 @@ export class ListPagesHelper<T extends EditablePageHolder> extends reducerHelper
   fixNonwebPage() {
     return (dispatch, getState) => {
       const { activeDoc } = this.myDocsHelper.getmyState(getState());
-      const reProcessPromise = fetch(
-        `api/pages/reprocss/${activeDoc.id}${activeDoc.id ? '/' : ''}`,
-      );
+
+      // Trigger processPage for all unprocessed pages in the document
+      if (activeDoc && activeDoc.pages) {
+        const unprocessedPages = activeDoc.pages.filter(p =>
+          p.pageType === 'unprocessed' || !p.pageType
+        );
+
+        unprocessedPages.forEach(page => {
+          dispatch(this.processPage(page.id));
+        });
+      }
     };
   }
 
@@ -923,52 +931,49 @@ export class ListPagesHelper<T extends EditablePageHolder> extends reducerHelper
             return { upLoadPromise, file, addFileOrder };
           });
 
-          return _.reduce(
-            filesWithOrder,
-            (prevPromise, fileAndOrder) => {
-              return prevPromise.then(() => {
-                const { upLoadPromise, file, addFileOrder } = fileAndOrder;
+          // Parallel uploads: process all files simultaneously instead of sequentially
+          return Promise.all(
+            filesWithOrder.map((fileAndOrder) => {
+              const { upLoadPromise, file, addFileOrder } = fileAndOrder;
 
-                return upLoadPromise
-                  .then(({ pageId, totalUploaded }) => {
-                    console.log(`fileUpload finalize ${file.name} -> ${totalUploaded} bytes `);
+              return upLoadPromise
+                .then(({ pageId, totalUploaded }) => {
+                  console.log(`fileUpload finalize ${file.name} -> ${totalUploaded} bytes `);
 
-                    return fetch(
-                      `api/pages/finalizeWithOriginal?docId=${encodeURIComponent(pageHolderId || '')}` +
-                        `&order=${order + addFileOrder}` +
-                        `&uploadSize=${totalUploaded}`,
-                      {
-                        method: 'post',
-                        headers: {
-                          'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify([{ pageId, originalPageName: file.name }]),
+                  return fetch(
+                    `api/pages/finalizeWithOriginal?docId=${encodeURIComponent(pageHolderId || '')}` +
+                      `&order=${order + addFileOrder}` +
+                      `&uploadSize=${totalUploaded}`,
+                    {
+                      method: 'post',
+                      headers: {
+                        'Content-Type': 'application/json',
                       },
-                    );
-                  })
-                  .then((response) => checkFetchError(response))
-                  .then((response) => response.json() as PromiseLike<PagesEffectedModel>)
-                  .then((response) => {
-                    console.log(`Done fileUpload finalize ${file.name} `);
+                      body: JSON.stringify([{ pageId, originalPageName: file.name }]),
+                    },
+                  );
+                })
+                .then((response) => checkFetchError(response))
+                .then((response) => response.json() as PromiseLike<PagesEffectedModel>)
+                .then((response) => {
+                  console.log(`Done fileUpload finalize ${file.name} `);
 
-                    if (response.effectedPageIds.length != 1) {
-                    }
+                  if (response.effectedPageIds.length != 1) {
+                  }
 
-                    //assuming there will be only one effeccted page
-                    response.effectedPageIds[0] &&
-                      setTimeout(() => dispatch(_mine.processPage(response.effectedPageIds[0])));
+                  //assuming there will be only one effeccted page
+                  response.effectedPageIds[0] &&
+                    setTimeout(() => dispatch(_mine.processPage(response.effectedPageIds[0])));
 
-                    //this is debounced so don't send it
-                    dispatch(
-                      _mine.handleReceivedPagesEffectedModel(response, true, incKeepTrack()),
-                    );
+                  //this is debounced so don't send it
+                  dispatch(
+                    _mine.handleReceivedPagesEffectedModel(response, true, incKeepTrack()),
+                  );
 
-                    return true;
-                  });
-              });
-            },
-            Promise.resolve(true),
-          );
+                  return true;
+                });
+            }),
+          ).then(() => true);
         })
         .then(() => {
           return true;

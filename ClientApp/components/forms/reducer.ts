@@ -606,6 +606,8 @@ class AutomationReducer extends ReducerBase<IFormsState, myActions> {
           if (!selectedProject) throw 'no project selected';
           forEdit = {
             projectId: selectedProject.id,
+            name: '', // Initialize name field
+            activeTab: 'script', // Start with script tab
           } as AutomationTaskModel;
         } else {
           const { listAutomationsAsync } = this.getCurrentState(getState());
@@ -667,7 +669,20 @@ class AutomationReducer extends ReducerBase<IFormsState, myActions> {
       const { currentlyEditing } = this.getCurrentState(getState());
       if (!currentlyEditing) throw 'no form is under edit';
 
+      // Validate name before saving
+      const name = currentlyEditing.name ? currentlyEditing.name.trim() : '';
+      if (name.length < 4) {
+        alert('Automation name must be at least 4 characters long');
+        return Promise.reject('Name validation failed');
+      }
+      if (name.length > 100) {
+        alert('Automation name must not exceed 100 characters');
+        return Promise.reject('Name validation failed');
+      }
+
       const formToSave = _.clone(currentlyEditing);
+      formToSave.name = name; // Use trimmed name
+
       if (activePage && (!formToSave.pages || formToSave.pages.length == 0))
         formToSave.pages = [activePage];
 
@@ -681,28 +696,24 @@ class AutomationReducer extends ReducerBase<IFormsState, myActions> {
         .then((response) => checkFetchError(response))
         .then((response) => response.json() as Promise<AutomationTaskModel>)
         .then((savedTask) => {
-          const testRun = dispatch(
-            this.runAutomation(
-              _.assign({}, currentlyEditing, { id: savedTask.id }),
-              listDocsHelper,
-            ),
-          );
-
-          return Promise.all([savedTask, testRun]);
+          // Reload automations list
+          return dispatch(_mine.loadAutomations(true)).then(() => savedTask);
         })
-        .then(([savedTask, testRun]) => {
-          dispatch(_mine.loadAutomations(true)).then(() => {
-            if (testRun.error) {
-              setTimeout(() => {
-                dispatch(_mine.editScript(savedTask.id));
-              }, 100);
-            } else {
-              dispatch(_mine.editScript(null));
-            }
-          });
+        .then((savedTask) => {
+          // Close editor on successful save
+          dispatch(_mine.editScript(null));
+
+          // Show success message
+          console.log(`Automation "${savedTask.name}" saved successfully`);
 
           return true;
+        })
+        .catch((error) => {
+          console.error('Failed to save automation:', error);
+          // Keep editor open on error so user can fix issues
+          throw error;
         });
+
       return dispatch(ensureWaitBox().doWait('saving automation task', savePromise));
     };
   }

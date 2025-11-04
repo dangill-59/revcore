@@ -252,6 +252,28 @@ namespace components.workspace
 
         }
 
+        /// <summary>
+        /// Trigger requeue of all uncatalogued documents for current workspace
+        /// </summary>
+        /// <returns></returns>
+        [HttpPost("requeueUncatalogued")]
+        public async Task requeueUncataloguedDocuments()
+        {
+            var currentWorkspace = _resolver.getCurrentWorkspace();
+
+            _logger.LogInformation($"Manual requeue requested for workspace {currentWorkspace.name} ({currentWorkspace.id})");
+
+            // Publish requeue message to trigger indexing of all uncatalogued documents
+            await _mq.publishMessageAsync(new revElasticSearch.MQUpdateDocMessage(
+                JobExecutionContext.createNew(),
+                null,  // docId is null for requeue of all uncatalogued
+                currentWorkspace.id,
+                revElasticSearch.DocUpdatedType.requeue
+            ));
+
+            _logger.LogInformation($"Requeue message published for workspace {currentWorkspace.name}");
+        }
+
         readonly static string AUTHPROVIDEROPENID = "OpenId Connect";
 
         /// <summary>
@@ -580,7 +602,31 @@ namespace components.workspace
                 workSpace = new WorkspaceModel
                 {
                     ownerUser = user,
-                    users = new[] { user }
+                    users = new[] { user },
+                    features = new Dictionary<string, LicFeatureModel>
+                    {
+                        ["scripts"] = new LicFeatureModel
+                        {
+                            count = 1,
+                            processor = "scripts",
+                            config = new Dictionary<string, string>()
+                        },
+                        ["fullTextOCR"] = new LicFeatureModel
+                        {
+                            count = 1,
+                            processor = "google",
+                            config = new Dictionary<string, string>
+                            {
+                                ["ocrEngine"] = "google"
+                            }
+                        },
+                        ["barcode"] = new LicFeatureModel
+                        {
+                            count = 1,
+                            processor = "barcode",
+                            config = new Dictionary<string, string>()
+                        }
+                    }
                 };
             }
 

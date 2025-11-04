@@ -23,6 +23,7 @@ import { ProjectFieldModel } from '../../generated/ProjectFieldModel';
 import { ProjectFieldTypeModel } from '../../generated/ProjectFieldTypeModel';
 import Select from 'react-select';
 import ensureProjects from './reducer';
+import { FieldRestrictionsManager } from './FieldRestrictionsManager';
 
 type ViewProps = /*MovabelFieldProps &*/ {
   isFirst: boolean;
@@ -198,6 +199,20 @@ const ProjectFieldForm: React.StatelessComponent<ViewProps> = ({
         </FormGroup>
       )}
 
+      {(field.restrictions || field.documentRestriction) && field.userlistValues && field.userlistValues.length > 0 && (
+        <FormGroup bsSize='small' style={{ padding: '10px', border: '1px solid #ddd', borderRadius: '4px', marginBottom: '10px' }}>
+          <FieldRestrictionsManager
+            restrictions={field.restrictions || []}
+            allUsers={[]} // TODO: Fetch from API
+            allRoles={allroles || []}
+            fieldValues={field.userlistValues || []}
+            onChange={(newRestrictions) => {
+              dispatch(ensureProjects().updateField(field, 'restrictions', newRestrictions));
+            }}
+          />
+        </FormGroup>
+      )}
+
       <FormGroup bsSize='small' style={{ textAlign: 'right', fontSize: 'smaller' }}>
         <small className='text-muted' style={{ marginRight: 5 }}>
           {field.required && ' required'}
@@ -268,18 +283,23 @@ const ProjectFieldForm: React.StatelessComponent<ViewProps> = ({
           <MenuItem>
             <input
               type='checkbox'
-              checked={!!field.documentRestriction}
-              onChange={(_) =>
+              checked={!!field.documentRestriction || (field.restrictions && field.restrictions.length > 0)}
+              onChange={(_) => {
+                const enable = !field.documentRestriction && (!field.restrictions || field.restrictions.length === 0);
                 dispatch(
                   ensureProjects().updateField(
                     field,
                     'documentRestriction',
-                    !field.documentRestriction,
+                    enable,
                   ),
-                )
-              }
+                );
+                // Initialize empty restrictions array when enabling
+                if (enable && !field.restrictions) {
+                  dispatch(ensureProjects().updateField(field, 'restrictions', []));
+                }
+              }}
             />
-            Document restriction
+            Document restriction {(field.restrictions && field.restrictions.length > 0) && `(${field.restrictions.length} rules)`}
           </MenuItem>
 
           <MenuItem></MenuItem>

@@ -174,6 +174,46 @@ class CustomDomain extends React.PureComponent<ViewProps, {}> {
                 Create a server login token for my workspace...
               </Button>
             </div>
+
+            <hr />
+            <div
+              className='mainInfo text-center container'
+              style={{
+                marginTop: 10,
+                padding: 20,
+              }}
+            >
+              <h4>Search Index Management</h4>
+              <HelpBlock>
+                If documents are showing as "yet to be catalogued" in the banner, you can manually trigger
+                reindexing of all uncatalogued documents.
+              </HelpBlock>
+              <Button
+                bsSize='small'
+                block
+                bsStyle='info'
+                onClick={() => {
+                  if (confirm('This will requeue all uncatalogued documents for indexing. Continue?')) {
+                    fetch('/api/Workspaces/requeueUncatalogued', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                    })
+                      .then((response) => {
+                        if (response.ok) {
+                          alert('Requeue triggered successfully. Documents will be indexed shortly.');
+                        } else {
+                          alert('Failed to trigger requeue. Please try again.');
+                        }
+                      })
+                      .catch((err) => {
+                        alert('Error: ' + err.message);
+                      });
+                  }
+                }}
+              >
+                Requeue Uncatalogued Documents
+              </Button>
+            </div>
           </div>
         )}
       </WorkspaceLoader>

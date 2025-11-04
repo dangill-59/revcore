@@ -1,4 +1,5 @@
 ﻿import { FieldLookupTypeModel } from './FieldLookupTypeModel';
+import { FieldRestrictionRule } from './FieldRestrictionRule';
 import { FieldSearchPropsModel } from './FieldSearchPropsModel';
 /*  GENERTAED automatically using Models.tst. DO NOT CHANGE HERE */
 import { ProjectFieldTypeModel } from './ProjectFieldTypeModel';
@@ -9,6 +10,9 @@ export interface ProjectFieldModel {
   required: boolean;
   unique: boolean;
   documentRestriction: boolean;
+  documentRestrictionBranch: boolean;
+  documentRestrictionForRoles: boolean;
+  restrictions?: FieldRestrictionRule[];
   indexSortOrder?: number;
   noIndexForRoles?: string[];
   fieldType: ProjectFieldTypeModel;

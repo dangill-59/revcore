@@ -75,6 +75,7 @@ export const DropTargetCreator = DropTarget(
 
 type StateProps = {
   scale?: number;
+  pollAttempts?: number;
 };
 
 type ViewProps = PageImageModel &
@@ -85,13 +86,15 @@ type ViewProps = PageImageModel &
   } & { desiredHeight: number; correctedDimentions: CorrectedDimentionProps };
 
 class LazyLoadedImage extends React.PureComponent<ViewProps, StateProps> {
-  state: StateProps = {};
+  state: StateProps = {
+    pollAttempts: 0,
+  };
   _imgRef: any = null;
 
   _checkProcessing: any = null;
 
   componentWillUnmount() {
-    if (this._checkProcessing) clearInterval(this._checkProcessing);
+    if (this._checkProcessing) clearTimeout(this._checkProcessing);
   }
 
   componentDidUpdate(prevProps) {
@@ -104,8 +107,16 @@ class LazyLoadedImage extends React.PureComponent<ViewProps, StateProps> {
     if (pageType != prevPageType) {
       if (!pageType || PageImageTypeModel.nonweb == pageType) {
         //image is done processing
+        this.setState({ pollAttempts: 0 });
       } else {
-        dispatch(listofPagesHelper.processPage(id));
+        // Optimized for fast in-process backend: poll frequently for first 10s, then back off
+        const attempts = this.state.pollAttempts || 0;
+        const delay = attempts < 5 ? 1000 : Math.min(3000 * Math.pow(1.5, attempts - 5), 15000);
+
+        this._checkProcessing = setTimeout(() => {
+          dispatch(listofPagesHelper.processPage(id));
+          this.setState({ pollAttempts: attempts + 1 });
+        }, delay);
       }
     }
   }
@@ -116,7 +127,11 @@ class LazyLoadedImage extends React.PureComponent<ViewProps, StateProps> {
     if (!pageType || PageImageTypeModel.nonweb == pageType) {
       //image is done processing
     } else {
-      dispatch(listofPagesHelper.processPage(id));
+      // Start with initial delay of 1 second for fast backend
+      this._checkProcessing = setTimeout(() => {
+        dispatch(listofPagesHelper.processPage(id));
+        this.setState({ pollAttempts: 1 });
+      }, 1000);
     }
   }
 
@@ -171,11 +186,13 @@ class LazyLoadedImage extends React.PureComponent<ViewProps, StateProps> {
     const waitBgStyle = {
       height: desiredHeight,
       width: '100%',
-      backgroundColor: 'white',
+      backgroundColor: '#f8f9fa',
       position: 'relative',
       display: 'flex',
       flexDirection: 'column',
       color: '#999',
+      border: '2px dashed #dee2e6',
+      borderRadius: '8px',
     } as any;
 
     const waitFileInfoStyle = {
@@ -186,7 +203,69 @@ class LazyLoadedImage extends React.PureComponent<ViewProps, StateProps> {
       justifyContent: 'center',
     } as any;
 
+    const processingOverlayStyle = {
+      position: 'absolute',
+      bottom: 0,
+      left: 0,
+      right: 0,
+      padding: '12px 16px',
+      backgroundColor: 'rgba(255, 255, 255, 0.95)',
+      borderTop: '1px solid #dee2e6',
+      backdropFilter: 'blur(4px)',
+    } as any;
+
+    const progressBarContainerStyle = {
+      height: '6px',
+      backgroundColor: '#e9ecef',
+      borderRadius: '3px',
+      overflow: 'hidden',
+      marginBottom: '8px',
+    } as any;
+
+    const progressBarStyle = {
+      height: '100%',
+      background: 'linear-gradient(90deg, #0d6efd 0%, #0dcaf0 100%)',
+      borderRadius: '3px',
+      animation: 'progress-animation 2s ease-in-out infinite',
+      width: '60%',
+    } as any;
+
+    const statusTextStyle = {
+      fontSize: '13px',
+      color: '#495057',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    } as any;
+
     const ext = id.substr(id.lastIndexOf('.') + 1);
+
+    // Helper component for processing status overlay
+    const ProcessingStatusOverlay = ({ status, icon }: { status: string; icon: string }) => (
+      <>
+        <style>{`
+          @keyframes progress-animation {
+            0% { transform: translateX(-100%); }
+            50% { transform: translateX(100%); }
+            100% { transform: translateX(-100%); }
+          }
+        `}</style>
+        <div style={processingOverlayStyle}>
+          <div style={progressBarContainerStyle}>
+            <div style={progressBarStyle}></div>
+          </div>
+          <div style={statusTextStyle}>
+            <span>
+              <i className={`fa ${icon} fa-spin`} style={{ marginRight: '8px' }}></i>
+              {status}
+            </span>
+            <span style={{ fontSize: '11px', color: '#6c757d' }}>
+              This usually takes 5-10 seconds
+            </span>
+          </div>
+        </div>
+      </>
+    );
 
     //when pagetype is null it menas it's ready for web display
     if (
@@ -205,6 +284,7 @@ class LazyLoadedImage extends React.PureComponent<ViewProps, StateProps> {
             alt='document image'
             className='docPageImage'
             style={{ height: desiredHeight }}
+            loading="lazy"
           />
 
           {PageOverlayView && (
@@ -274,13 +354,11 @@ class LazyLoadedImage extends React.PureComponent<ViewProps, StateProps> {
         return (
           <div style={waitBgStyle}>
             <FileInfoView />
-
             <CheckOfflineProcessing>
-              <div style={waitTextStyle}>
-                <span>
-                  analyzing <i className='fa fa-spinner fa-spin fa-fw'></i>
-                </span>
-              </div>
+              <ProcessingStatusOverlay
+                status="Analyzing document..."
+                icon="fa-search"
+              />
             </CheckOfflineProcessing>
           </div>
         );
@@ -289,13 +367,11 @@ class LazyLoadedImage extends React.PureComponent<ViewProps, StateProps> {
         return (
           <div style={waitBgStyle}>
             <FileInfoView />
-
             <CheckOfflineProcessing>
-              <div style={waitTextStyle}>
-                <span>
-                  identifying <i className='fa fa-spinner fa-spin fa-fw'></i>
-                </span>
-              </div>
+              <ProcessingStatusOverlay
+                status="Identifying document type..."
+                icon="fa-file-text"
+              />
             </CheckOfflineProcessing>
           </div>
         );
@@ -304,13 +380,11 @@ class LazyLoadedImage extends React.PureComponent<ViewProps, StateProps> {
         return (
           <div style={waitBgStyle}>
             <FileInfoView />
-
             <CheckOfflineProcessing>
-              <div style={waitTextStyle}>
-                <span>
-                  rendering <i className='fa fa-spinner fa-spin fa-fw'></i>
-                </span>
-              </div>
+              <ProcessingStatusOverlay
+                status="Converting to images..."
+                icon="fa-image"
+              />
             </CheckOfflineProcessing>
           </div>
         );
@@ -367,7 +441,7 @@ const PageView: React.StatelessComponent<ViewProps> = (props) => {
           opacity: isDragging ? 0.5 : 1,
         }}
       >
-        <LazyLoad height={desiredHeight} width={desiredWidth} offsetVertical={300}>
+        <LazyLoad height={desiredHeight} width={desiredWidth} offsetVertical={1000}>
           <LazyLoadedImage {...props} />
         </LazyLoad>
       </div>,

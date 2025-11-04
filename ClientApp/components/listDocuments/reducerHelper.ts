@@ -587,8 +587,10 @@ if it's false we have control key behaviour
   }
 
   private findDocumentInDocsAsync(docsAsync: IAsyncResult<T[]>, value?: string | T) {
-    if (!(docsAsync && docsAsync.result && docsAsync.result.length > 0))
-      throw 'findDocumentInList failed: docsAsync.result not set';
+    if (!(docsAsync && docsAsync.result && docsAsync.result.length > 0)) {
+      console.warn('findDocumentInList called before docsAsync.result is set');
+      return null;
+    }
 
     if (typeof value === 'undefined') {
       console.error('findDocumentInList called with  undefined value');

@@ -81,7 +81,9 @@ namespace components.listPages
 
             if (null != effected.pageHolder)
             {
-                effected.pageHolder = hasRevImages.FixPageHolderForWireStatic(_logger, effected.pageHolder, _distributedCache, pid => _storage.publicPath(pid));
+                // Get workspace ID from the PageTypeUpdated message or from the RevDatabase
+                var workspaceId = messageCtx.Message.workspaceId ?? _revDb.workspaceId;
+                effected.pageHolder = hasRevImages.FixPageHolderForWireStatic(_logger, effected.pageHolder, _distributedCache, pid => _storage.publicPath(pid), workspaceId);
             }
 
             //await _pageadoneWaiter.markJobCompleted<PagesEffectedModel>(effected);

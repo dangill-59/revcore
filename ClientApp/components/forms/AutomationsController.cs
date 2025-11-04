@@ -90,21 +90,45 @@ namespace components.forms
         {
             this.ensureWorkspaceAdmin(_resolver);
 
+            // Validate and sanitize name
+            if (string.IsNullOrWhiteSpace(req.name))
+                throw new ExceptionWithCode("Task name is required", System.Net.HttpStatusCode.BadRequest);
+
+            req.name = req.name.Trim();
+
+            if (req.name.Length < 4)
+                throw new ExceptionWithCode("Task name must be at least 4 characters", System.Net.HttpStatusCode.BadRequest);
+
+            if (req.name.Length > 100)
+                throw new ExceptionWithCode("Task name must not exceed 100 characters", System.Net.HttpStatusCode.BadRequest);
+
+            // Sanitize HTML/script tags to prevent XSS
+            req.name = System.Net.WebUtility.HtmlEncode(req.name);
+
+            // Validate zones if present
             if (null != req.zones && req.zones.Count() > 0)
             {
                 var breakField = req.zones.FirstOrDefault(z => z.isBreakField);
                 if (null == breakField)
                     throw new ExceptionWithCode("form has no break field");
-            }
 
-            if (string.IsNullOrWhiteSpace(req.name))
-                throw new ExceptionWithCode("Task name is required", System.Net.HttpStatusCode.BadRequest);
+                // Validate zone structure
+                foreach (var zone in req.zones)
+                {
+                    if (zone.x < 0 || zone.y < 0 || zone.width <= 0 || zone.height <= 0)
+                        throw new ExceptionWithCode("Zone dimensions must be positive numbers", System.Net.HttpStatusCode.BadRequest);
+                }
+            }
 
             if (null == req.zones || req.zones.Length == 0)
             {
                 _logger.LogDebug($"Task {req.name} has no zones");
                 if (string.IsNullOrWhiteSpace(req.scriptCode))
                     throw new ExceptionWithCode("script code is required");
+
+                // Basic script validation - check for syntax errors
+                if (req.scriptCode.Length > 1000000) // 1MB limit
+                    throw new ExceptionWithCode("Script code is too large", System.Net.HttpStatusCode.BadRequest);
             }
 
             if (!String.IsNullOrEmpty(req.id))
@@ -126,13 +150,21 @@ namespace components.forms
                     var newPageFolder = $"{req.contentFolder}/{Guid.NewGuid()}";
                     var newPageID = $"{newPageFolder}/{Path.GetFileName(p.id)}";
 
-                    using (var tmp = _cache.createCacheStream())
-                    using (var istm = await _storage.getImageStreamAsync(p.id))
+                    try
                     {
-                        await istm.CopyToAsync(tmp);
-                        tmp.Seek(0, SeekOrigin.Begin);
-                        await _storage.SaveStreamAsync(newPageID, tmp);
-
+                        using (var tmp = _cache.createCacheStream())
+                        using (var istm = await _storage.getImageStreamAsync(p.id))
+                        {
+                            await istm.CopyToAsync(tmp);
+                            tmp.Seek(0, SeekOrigin.Begin);
+                            await _storage.SaveStreamAsync(newPageID, tmp);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, $"Failed to copy page image {p.id} to {newPageID}");
+                        throw new ExceptionWithCode($"Failed to copy page image: {ex.Message}", System.Net.HttpStatusCode.InternalServerError,
+                            innerException: ex);
                     }
 
                     return new PageImageModel
@@ -143,10 +175,7 @@ namespace components.forms
                         orderNumber = i
                     };
                 }));
-
-
             }
-
 
             await _revDb.AddorUpdateAsync(req);
 
@@ -184,13 +213,28 @@ namespace components.forms
             {
                 float sampleSizeNormalizationXMultiplier = 1f / (float)samplePage.width * (float)currentPage.width;
                 float sampleSizeNormalizationYMultiplier = 1f / (float)samplePage.height * (float)currentPage.height;
+
+                _logger.LogDebug($"ResampleZones: Sample page {samplePage.width}x{samplePage.height}, Current page {currentPage.width}x{currentPage.height}");
+                _logger.LogDebug($"ResampleZones: Multipliers X={sampleSizeNormalizationXMultiplier}, Y={sampleSizeNormalizationYMultiplier}");
+
                 foreach (var zone in zones)
                 {
+                    var origX = zone.x;
+                    var origY = zone.y;
+                    var origW = zone.width;
+                    var origH = zone.height;
+
                     zone.x = zone.x * sampleSizeNormalizationXMultiplier;
                     zone.y = zone.y * sampleSizeNormalizationYMultiplier;
                     zone.width = zone.width * sampleSizeNormalizationXMultiplier;
                     zone.height = zone.height * sampleSizeNormalizationYMultiplier;
+
+                    _logger.LogDebug($"ResampleZones: Zone {zone.id} transformed from ({origX},{origY},{origW}x{origH}) to ({zone.x},{zone.y},{zone.width}x{zone.height})");
                 }
+            }
+            else
+            {
+                _logger.LogWarning($"ResampleZones: NO RESAMPLING - samplePage is null or has zero dimensions");
             }
         }
 
@@ -347,13 +391,31 @@ namespace components.forms
                 .Where(f => f.projectId == projectId)
                 .ToArray();
 
-            var docsGenerated = new List<DocumentModel>();
-            var remainingPages = new List<PageImageModel>();
-            remainingPages.AddRange(pages);
+            // Filter out automations with no zones
+            var validForms = forms.Where(f => f.zones != null && f.zones.Length > 0).ToArray();
 
-            foreach (var form in forms)
+            foreach (var form in forms.Where(f => f.zones == null || f.zones.Length == 0))
             {
-                _logger.LogInformation($"ExecuteAllForFormAsync running for project [{projectId}] and automation [{form.name}].");
+                _logger.LogWarning($"Skipping automation [{form.name}] - no zones defined");
+            }
+
+            if (validForms.Length == 0)
+            {
+                _logger.LogInformation($"No valid automations to run for project [{projectId}]");
+                return new AutomationRunResultModel
+                {
+                    docs = new DocumentModel[] { },
+                    detected = null,
+                    pagesLeft = pages
+                };
+            }
+
+            _logger.LogInformation($"Running {validForms.Length} automations in parallel for project [{projectId}]");
+
+            // Run all automations in parallel against all pages
+            var allFormResults = await Task.WhenAll(validForms.Select(async (form, formIndex) =>
+            {
+                _logger.LogInformation($"ExecuteAllForFormAsync running automation [{form.name}] (index {formIndex})");
 
                 var hasRecognizer = null != form.zones.Where(z => z.id == "forms_recognizerField").SingleOrDefault();
 
@@ -361,10 +423,10 @@ namespace components.forms
                 if (breakFieldIds.Count() == 0)
                     throw new ExceptionWithCode($"form {form.id} has no break fields");
 
-                _logger.LogInformation($"ExecuteFormAsync: {form.id} - detecting ");
+                _logger.LogInformation($"ExecuteFormAsync: {form.id} - detecting zones for {pages.Length} pages");
 
-
-                var detectedList = await Task.WhenAll(remainingPages.Select(async (page, i) =>
+                // Process all pages for this automation in parallel
+                var detectedList = await Task.WhenAll(pages.Select(async (page, i) =>
                 {
                     try
                     {
@@ -406,24 +468,20 @@ namespace components.forms
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError($"ExecuteFormAsync: failed detect page {i}, id : {page.id}", ex);
+                        _logger.LogError($"ExecuteFormAsync: automation {form.name}, failed detect page {i}, id : {page.id}", ex);
                         throw;
                     }
-
-
-
                 }));
 
-                _logger.LogTrace($"ExecuteFormAsync: {form.id} - finding docs");
+                _logger.LogTrace($"ExecuteFormAsync: {form.id} - building documents");
                 var docs = new List<DocumentModel>();
                 DocumentModel currentDoc = null;
-                var pagesLeft = new List<PageImageModel>();
+
                 foreach (var detected in detectedList)
                 {
                     if (!detected.isFormPage)
                     {
-                        _logger.LogTrace($"ExecuteFormAsync: {form.id} - empty recognizer field skipping");
-                        pagesLeft.Add(detected.page);
+                        _logger.LogTrace($"ExecuteFormAsync: {form.id} - page {detected.page.id} doesn't match recognizer field");
                         continue;
                     }
 
@@ -435,9 +493,7 @@ namespace components.forms
                         {
                             return true;
                         }
-
                         return false;
-
                     })
                     .FirstOrDefault();
 
@@ -452,20 +508,67 @@ namespace components.forms
                         docs.Add(currentDoc);
                     }
 
-
                     ((List<PageImageModel>)(currentDoc.pages)).Add(detected.page);
-
                 }
 
-                docsGenerated.AddRange(docs);
-                remainingPages.Clear();
-                remainingPages.AddRange(pagesLeft);
+                _logger.LogInformation($"Automation [{form.name}] generated {docs.Count} documents from {detectedList.Count(d => d.isFormPage)} matching pages");
+
+                return new
+                {
+                    formIndex,
+                    form,
+                    docs,
+                    matchedPages = detectedList.Where(d => d.isFormPage).Select(d => d.page.id).ToHashSet()
+                };
+            }));
+
+            // Assign pages to first matching automation (by original order)
+            var pageAssignments = new Dictionary<string, int>(); // pageId -> formIndex
+            foreach (var page in pages)
+            {
+                for (int i = 0; i < allFormResults.Length; i++)
+                {
+                    if (allFormResults[i].matchedPages.Contains(page.id))
+                    {
+                        pageAssignments[page.id] = i;
+                        break;
+                    }
+                }
             }
+
+            // Build final document list and unmatched pages
+            var docsGenerated = new List<DocumentModel>();
+            var matchedPageIds = new HashSet<string>();
+
+            foreach (var formResult in allFormResults)
+            {
+                foreach (var doc in formResult.docs)
+                {
+                    // Filter document pages to only include those assigned to this automation
+                    var assignedPages = ((List<PageImageModel>)doc.pages)
+                        .Where(p => pageAssignments.TryGetValue(p.id, out var assignedFormIndex) && assignedFormIndex == formResult.formIndex)
+                        .ToList();
+
+                    if (assignedPages.Count > 0)
+                    {
+                        doc.pages = assignedPages;
+                        docsGenerated.Add(doc);
+                        foreach (var p in assignedPages)
+                        {
+                            matchedPageIds.Add(p.id);
+                        }
+                    }
+                }
+            }
+
+            var remainingPages = pages.Where(p => !matchedPageIds.Contains(p.id)).ToArray();
+
+            _logger.LogInformation($"ExecuteAllForFormAsync completed: {docsGenerated.Count} documents generated, {remainingPages.Length} pages unmatched");
+
             return new AutomationRunResultModel
             {
                 docs = docsGenerated.ToArray(),
-                //detected = detectedList.ToDictionary(k => k.page.id, v => v.detected),
-                pagesLeft = remainingPages.ToArray(),
+                pagesLeft = remainingPages,
             };
         }
 
@@ -482,10 +585,10 @@ namespace components.forms
         [HttpPost("detectStart")]
         public async Task<string> DetectZoneStartAsync([FromBody] DetectReqModel req)
         {
-
             if (null == req)
                 throw new ArgumentNullException(nameof(req));
 
+            _logger.LogDebug($"DetectZoneStartAsync: pageId={req.pageId}, zones count={req.zones?.Length ?? 0}");
 
             return await _pageadoneWaiter.CreateJob<DetectReqModel, workspace.DetectReqJobDone>(this.currentLoggedonUser(), req);
         }

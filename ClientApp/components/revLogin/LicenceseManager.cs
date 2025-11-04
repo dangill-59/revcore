@@ -73,7 +73,7 @@ namespace components.revLogin
             var tokenKeys = cacheKeyFromIdToken(castedToken, dbWorkspace.name);
 
 
-            var inactivityTimeout = workspaceInactivityTimeout(dbWorkspace);
+            var inactivityTimeout = await workspaceInactivityTimeoutAsync(dbWorkspace);
 
             try
             {
@@ -141,9 +141,9 @@ namespace components.revLogin
         }
 
 
-        //whe we cretae a JWT for a workspace we update this 
-        readonly static ConcurrentDictionary<string, TimeSpan> _mapWorkspaceSlidigExpirations = new ConcurrentDictionary<string, TimeSpan>();
-
+        // Phase 4 Extension: Removed static state for horizontal scaling
+        // Old: readonly static ConcurrentDictionary<string, TimeSpan> _mapWorkspaceSlidigExpirations
+        // New: Using distributed cache for JWT expiration tracking
 
         /// <summary>
         /// get the saved access_token. Also adds time to the inactivity timeout. Called every API call
@@ -163,12 +163,21 @@ namespace components.revLogin
 
             }
 
+            // Use distributed cache for workspace JWT expiration settings
+            var expirationKey = $"workspace-jwt-expiration:{workspaceName}";
+            var cachedExpiration = await _distributedCache.GetStringAsync(expirationKey);
+
             TimeSpan slidingExpiration;
-            if (!_mapWorkspaceSlidigExpirations.TryGetValue(workspaceName, out slidingExpiration))
+            if (string.IsNullOrEmpty(cachedExpiration))
             {
-                _logger.LogDebug($"sliding expiration not found getting from DB");
+                _logger.LogDebug($"sliding expiration not found in cache, getting from DB");
                 var dbWorkspace = _revAuthDb.getQueryable<WorkspaceModel>().Single(w => w.name == workspaceName);
-                slidingExpiration = workspaceInactivityTimeout(dbWorkspace);
+                slidingExpiration = await workspaceInactivityTimeoutAsync(dbWorkspace);
+            }
+            else
+            {
+                slidingExpiration = TimeSpan.Parse(cachedExpiration);
+                _logger.LogDebug($"using cached sliding expiration {slidingExpiration} for workspace {workspaceName}");
             }
 
             //get the generic access Token eveytime so that we keep renewsing it's LifeTime

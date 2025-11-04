@@ -503,34 +503,14 @@ namespace components.searchView
                 var allProjectsFieldTypes = includedProjects.SelectMany(p =>
                     p.fields.Select(f => new { f.displayName, f.fieldType, f.defaultSearchProps, f.userlistValues })).ToArray();
 
-                // Divine: This is to restrict users from seeing others documents
-
+                // Apply document-level field restrictions
                 var userId = this.currentLoggedonUser();
-
                 var userCollection = _revDb.getCollection<WorkspaceUserModel>();
                 var dbUser = userCollection.Find(u => u.userId == userId).SingleOrDefault();
 
                 if (null != dbUser)
                 {
-                    var allSelectFields = includedProjects.SelectMany(p =>
-                       p.fields.Select(f => new { f.displayName, f.fieldType, f.defaultSearchProps, f.userlistValues, f.documentRestriction }))
-                       .Where(x => x.fieldType == ProjectFieldTypeModel.user_list)
-                       .ToArray();
-
-                    var loggedInUserFound = allSelectFields.Where(x => x.userlistValues.Contains(dbUser.fullName)).FirstOrDefault();
-
-                    if (null != loggedInUserFound)
-                    {
-                        if (loggedInUserFound.documentRestriction)
-                        {
-                            if (null == req.fields)
-                            {
-                                req.fields = new Dictionary<string, string[]>();
-                            }
-                            if (!req.fields.ContainsKey(loggedInUserFound.displayName))
-                                req.fields.Add(loggedInUserFound.displayName, new[] { dbUser.fullName });
-                        }
-                    }
+                    ApplyFieldRestrictions(includedProjects, dbUser, req);
                 }
 
                 allProjectsFieldTypes = allProjectsFieldTypes.Concat(new[]
@@ -961,6 +941,159 @@ namespace components.searchView
             input = input.Replace(" ", "*");
             input = "*" + input + "*";
             return input;
+        }
+
+        /// <summary>
+        /// Applies field-level document restrictions based on the new flexible restriction rules system
+        /// Supports both legacy documentRestriction boolean and new FieldRestrictionRule[] array
+        /// </summary>
+        private void ApplyFieldRestrictions(
+            IEnumerable<ProjectModel> includedProjects,
+            WorkspaceUserModel dbUser,
+            SearchRequestModel req)
+        {
+            var userId = dbUser.userId;
+            var userFullName = dbUser.fullName;
+            var userEmail = dbUser.invitationEmail?.emailTo;
+
+            // Get user's roles
+            var userRoles = dbUser.roles ?? new string[] { };
+
+            foreach (var project in includedProjects)
+            {
+                foreach (var field in project.fields.Where(f => f.fieldType == ProjectFieldTypeModel.user_list))
+                {
+                    // Handle new flexible restriction system
+                    if (field.restrictions != null && field.restrictions.Length > 0)
+                    {
+                        ApplyFlexibleRestrictions(field, userId, userFullName, userRoles, req);
+                    }
+                    // Handle legacy documentRestriction boolean (backward compatibility)
+                    else if (field.documentRestriction)
+                    {
+                        ApplyLegacyRestriction(field, userFullName, req);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Applies the new flexible restriction rules (Allow/Deny with users and roles)
+        /// </summary>
+        private void ApplyFlexibleRestrictions(
+            ProjectFieldModel field,
+            string userId,
+            string userFullName,
+            string[] userRoles,
+            SearchRequestModel req)
+        {
+            var applicableRules = field.restrictions.Where(rule =>
+            {
+                // Rule applies if user ID matches OR any of user's roles match
+                var userMatches = rule.userIds != null && rule.userIds.Contains(userId);
+                var roleMatches = rule.roles != null && userRoles != null &&
+                                  rule.roles.Any(role => userRoles.Contains(role));
+
+                return userMatches || roleMatches;
+            }).ToArray();
+
+            if (applicableRules.Length == 0)
+            {
+                // No rules apply to this user - they can see all documents
+                return;
+            }
+
+            // Separate Allow and Deny rules
+            var allowRules = applicableRules.Where(r => r.ruleType == FieldRestrictionRuleType.Allow).ToArray();
+            var denyRules = applicableRules.Where(r => r.ruleType == FieldRestrictionRuleType.Deny).ToArray();
+
+            // Handle Allow rules (whitelist)
+            if (allowRules.Length > 0)
+            {
+                // Collect all allowed values from all applicable Allow rules
+                var allowedValues = allowRules
+                    .Where(r => r.allowedValues != null)
+                    .SelectMany(r => r.allowedValues)
+                    .Distinct()
+                    .ToArray();
+
+                if (allowedValues.Length > 0)
+                {
+                    // Add restriction: user can ONLY see documents with these values
+                    if (req.fields == null)
+                    {
+                        req.fields = new Dictionary<string, string[]>();
+                    }
+
+                    if (!req.fields.ContainsKey(field.displayName))
+                    {
+                        // No existing filter - add our allow list
+                        req.fields[field.displayName] = allowedValues;
+                        _logger.LogDebug($"Applied Allow restriction on '{field.displayName}': {string.Join(", ", allowedValues)}");
+                    }
+                    else
+                    {
+                        // There's an existing user filter - intersect it with our allowed values
+                        var existingValues = req.fields[field.displayName];
+                        var intersected = existingValues.Intersect(allowedValues).ToArray();
+
+                        if (intersected.Length == 0)
+                        {
+                            // No overlap - user is searching for values they can't access
+                            // Return no results by setting an impossible filter
+                            req.fields[field.displayName] = new[] { "__NO_MATCHES__" };
+                            _logger.LogWarning($"User search on '{field.displayName}' has no overlap with allowed values");
+                        }
+                        else
+                        {
+                            req.fields[field.displayName] = intersected;
+                        }
+                    }
+                }
+            }
+
+            // Handle Deny rules (blacklist)
+            // Note: Deny rules are currently not easily implementable in ElasticSearch without adding must_not clauses
+            // For now, we log a warning. Full implementation would require modifying the query building logic
+            if (denyRules.Length > 0)
+            {
+                var deniedValues = denyRules
+                    .Where(r => r.allowedValues != null)
+                    .SelectMany(r => r.allowedValues)
+                    .Distinct()
+                    .ToArray();
+
+                if (deniedValues.Length > 0)
+                {
+                    _logger.LogWarning($"Deny rules on field '{field.displayName}' are not fully implemented yet. Denied values: {string.Join(", ", deniedValues)}");
+                    // TODO: Implement deny rules by adding must_not clauses to the ES query
+                    // This would require refactoring the query building logic in searchDocuments method
+                }
+            }
+        }
+
+        /// <summary>
+        /// Applies legacy documentRestriction boolean (backward compatibility)
+        /// </summary>
+        private void ApplyLegacyRestriction(
+            ProjectFieldModel field,
+            string userFullName,
+            SearchRequestModel req)
+        {
+            // Legacy behavior: if user's fullName is in userlistValues, restrict to that value
+            if (field.userlistValues != null && field.userlistValues.Contains(userFullName))
+            {
+                if (req.fields == null)
+                {
+                    req.fields = new Dictionary<string, string[]>();
+                }
+
+                if (!req.fields.ContainsKey(field.displayName))
+                {
+                    req.fields[field.displayName] = new[] { userFullName };
+                    _logger.LogDebug($"Applied legacy restriction on '{field.displayName}' for user: {userFullName}");
+                }
+            }
         }
     }
 }

@@ -129,6 +129,7 @@ namespace components.listDocuments
         [HttpPost]
         public async Task<UpdateDocResultModel[]> updateDocument([FromBody] DocumentModel[] req)
         {
+            _logger.LogInformation($"updateDocument called with {req?.Length ?? 0} documents");
 
             if (null == req)
                 throw new ArgumentNullException("req is null");
@@ -256,6 +257,7 @@ namespace components.listDocuments
                 catch (Exception ex)
                 {
                     //throw new ExceptionWithCode(ex.Message, System.Net.HttpStatusCode.BadRequest, null, ex);
+                    _logger.LogError(ex, $"Failed to save document {inputDoc?.id ?? "new"}: {ex.Message}");
                     var error = reactBase.ErrorMessage.userDomainErrorMessageFromExcption(ex, _logger);
                     return new UpdateDocResultModel { error = error.Message };
                 }
