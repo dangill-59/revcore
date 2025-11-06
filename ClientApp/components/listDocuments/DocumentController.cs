@@ -18,6 +18,7 @@ using restUpdate;
 using revMQAbstractions;
 using RevStorage;
 using Utilities;
+using revCore2site.Services;
 
 namespace components.listDocuments
 {
@@ -39,6 +40,7 @@ namespace components.listDocuments
         //readonly IDeprecated_RabbitMQConnector _revEventPublisher;
         IConfiguration _configuration;
         readonly IRevMQBus _mq;
+        readonly AuditHelper _auditHelper;
 
 
         public DocumentController(commonInterfaces.IRevDatabase revDb,
@@ -49,7 +51,8 @@ namespace components.listDocuments
             IRevStorageService storage,
             IRevAudit audit,
             components.listPages.IPageDeleteService pageDeleteService,
-             ILogger<DocumentController> logger, IConfiguration configuration)
+             ILogger<DocumentController> logger, IConfiguration configuration,
+             AuditHelper auditHelper)
         {
             _audit = audit;
             _revDb = revDb;
@@ -64,6 +67,7 @@ namespace components.listDocuments
             //_distributedLock = distributedLock;
 
             _mq = mq;
+            _auditHelper = auditHelper;
         }
 
 
@@ -109,6 +113,10 @@ namespace components.listDocuments
                     var count = await _revDb.DeleteAsync<DocumentModel>(new[] { docId });
 
                     _audit.Log(AuditAction.documentDeleted, this.currentLoggedonUser(), docId, _revDb.dbName);
+
+                    // New comprehensive audit logging - get project name for better description
+                    var project = _revDb.getQueryable<ProjectModel>().FirstOrDefault(p => p.id == theDoc.projectId);
+                    await _auditHelper.LogDocumentDeletedAsync(theDoc.id, theDoc.evoDocId ?? theDoc.id, project?.name);
 
                     if (1 != count)
                         throw new Exception($"failed deleting doc {docId}");
@@ -228,6 +236,95 @@ namespace components.listDocuments
                     _audit.Log(isNewDocument ? AuditAction.documentCreated : AuditAction.documentUpdated,
                         this.currentLoggedonUser(), inputDoc.id, _revDb.dbName, new Dictionary<string, string> { { "durationInMS", (DateTime.Now - updateStarted).ToString() } });
 
+                    // New comprehensive audit logging
+                    var project = _revDb.getQueryable<ProjectModel>().FirstOrDefault(p => p.id == docUpdater.theProjectId);
+                    if (isNewDocument)
+                    {
+                        await _auditHelper.LogDocumentCreatedAsync(
+                            documentId: docId,
+                            documentName: inputDoc.evoDocId ?? docId,
+                            projectId: docUpdater.theProjectId,
+                            projectName: project?.name);
+                    }
+                    else
+                    {
+                        // Get the existing document to compare changes
+                        var existingDoc = await docUpdater.pageHolderCollection.OfType<DocumentModel>()
+                            .Find(d => d.id == docId).FirstOrDefaultAsync();
+
+                        var oldValues = new Dictionary<string, object>();
+                        var newValues = new Dictionary<string, object>();
+                        var metadata = new Dictionary<string, object>();
+
+                        // Create a mapping of field names to display names
+                        var fieldDisplayNames = project?.fields?.ToDictionary(f => f.displayName, f => f.displayName) ?? new Dictionary<string, string>();
+
+                        // Track index field changes with user-friendly field names
+                        if (updatedIndexs?.Count > 0 && project != null)
+                        {
+                            foreach (var index in updatedIndexs)
+                            {
+                                var fieldPath = index.Key;
+                                var newValue = index.Value;
+
+                                // Try to find the field display name from project fields
+                                var field = project.fields?.FirstOrDefault(f => f.displayName == fieldPath);
+                                var displayName = field?.displayName ?? fieldPath;
+
+                                // Try to get old value from existing document
+                                if (existingDoc != null)
+                                {
+                                    var oldValue = existingDoc.GetType().GetProperty(fieldPath)?.GetValue(existingDoc);
+                                    // Only log if values actually changed (and handle null comparisons properly)
+                                    var valuesAreDifferent = oldValue == null && newValue != null ||
+                                                           oldValue != null && newValue == null ||
+                                                           (oldValue != null && newValue != null && !oldValue.Equals(newValue));
+
+                                    if (valuesAreDifferent)
+                                    {
+                                        oldValues[displayName] = oldValue ?? "(empty)";
+                                        newValues[displayName] = newValue ?? "(empty)";
+                                    }
+                                }
+                                else if (newValue != null)
+                                {
+                                    // New document or first time setting this field
+                                    newValues[displayName] = newValue;
+                                }
+                            }
+
+                            if (oldValues.Count > 0 || newValues.Count > 0)
+                            {
+                                metadata["indexFieldsModified"] = Math.Max(oldValues.Count, newValues.Count);
+                            }
+                        }
+
+                        // Track page additions
+                        if (pagestoUpdate != null && pagestoUpdate.Any())
+                        {
+                            var totalPagesAdded = pagestoUpdate.Sum(ph => ph.pages?.Count() ?? 0);
+                            metadata["pagesAdded"] = totalPagesAdded;
+                            newValues["Page Count"] = (existingDoc?.pages?.Count() ?? 0) + totalPagesAdded;
+                            if (existingDoc != null)
+                            {
+                                oldValues["Page Count"] = existingDoc.pages?.Count() ?? 0;
+                            }
+                        }
+
+                        // Add projectId to metadata so frontend can create link
+                        if (project != null)
+                        {
+                            metadata["projectId"] = project.id;
+                            metadata["projectName"] = project.name;
+                        }
+
+                        await _auditHelper.LogDocumentUpdatedAsync(
+                            documentId: docId,
+                            documentName: inputDoc.evoDocId ?? docId,
+                            oldValues: oldValues.Count > 0 ? oldValues : null,
+                            newValues: newValues.Count > 0 ? newValues : null,
+                            metadata: metadata.Count > 0 ? metadata : null);
+                    }
 
                     if (!inputDoc.isPlaceHolder)
                     {

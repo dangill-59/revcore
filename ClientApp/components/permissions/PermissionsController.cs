@@ -15,6 +15,7 @@ using Newtonsoft.Json;
 using reactBase;
 using Utilities;
 using MongoDB.Driver;
+using revCore2site.Services;
 
 
 namespace components.permissions
@@ -31,6 +32,7 @@ namespace components.permissions
         readonly IEmailSenderService _mailsender;
         readonly IProvisionAuthProvider _provisioner;
         IConfiguration configuration;
+        readonly AuditHelper _auditHelper;
         /// <summary>
         /// This install is in appliance mode
         /// </summary>
@@ -43,7 +45,8 @@ namespace components.permissions
         IEmailSenderService mailsender,
         IConfiguration _configuration,
         IProvisionAuthProvider provisioner,
-        ILogger<PermissionsController> logger)
+        ILogger<PermissionsController> logger,
+        AuditHelper auditHelper)
         {
             _signer = signer;
             _revDb = revDb;
@@ -54,6 +57,7 @@ namespace components.permissions
             _provisioner = provisioner;
             configuration = _configuration;
             _usingApplianceAuth = !_configuration.GetValue<bool>("authentication:useAuth0");
+            _auditHelper = auditHelper;
 
         }
 
@@ -322,6 +326,10 @@ namespace components.permissions
 
             await authUserCollection.DeleteOneAsync(u => u.UserName.ToLower() == id.ToLower());
 
+            // Audit logging
+            var userEmail = userQ?.emailaddress ?? exisitingQ.invitationEmail?.emailTo ?? id;
+            await _auditHelper.LogUserDeletedAsync(exisitingQ.userId, userEmail);
+
         }
 
 
@@ -386,6 +394,16 @@ namespace components.permissions
 
                         if (!updated.IsAcknowledged)
                             throw new Exception("mngo failed to ack");
+
+                        // Audit log admin role grants
+                        var authUsers = await userCollection.Find(u => missingAdmins.Contains(u.UserName)).ToListAsync();
+                        foreach (var userId in missingAdmins)
+                        {
+                            var userEmail = authUsers.FirstOrDefault(u => u.UserName == userId)?.emailaddress
+                                ?? reqList.FirstOrDefault(r => r.workspaceUser.userId == userId)?.email
+                                ?? userId;
+                            await _auditHelper.LogUserRoleChangedAsync(userId, userEmail, newIsAdmin: true);
+                        }
                     }
                     else
                     {
@@ -410,6 +428,16 @@ namespace components.permissions
 
                         if (!updated.IsAcknowledged)
                             throw new Exception("mongo failed to ack");
+
+                        // Audit log admin role revocations
+                        var authUsers = await userCollection.Find(u => adminUserIds.Contains(u.UserName)).ToListAsync();
+                        foreach (var userId in adminUserIds)
+                        {
+                            var userEmail = authUsers.FirstOrDefault(u => u.UserName == userId)?.emailaddress
+                                ?? reqList.FirstOrDefault(r => r.workspaceUser.userId == userId)?.email
+                                ?? userId;
+                            await _auditHelper.LogUserRoleChangedAsync(userId, userEmail, newIsAdmin: false);
+                        }
                     }
                     else
                     {
@@ -506,17 +534,50 @@ namespace components.permissions
                     {
                         workspaceUser = await _provisioner.handleJoinInvitation(joinInvitation, _revDb, provisioned.userName);
 
-                        await SendMail(joinInvitation, req.email, bCCEmailTo, provisioned);
+                        // Generate email content
+                        var (emailSubject, emailBody) = GenerateInvitationEmailContent(joinInvitation, provisioned);
+                        bool emailSent = false;
+
+                        // Try to send email, but don't fail if email is not configured
+                        try
+                        {
+                            await SendMail(joinInvitation, req.email, bCCEmailTo, provisioned);
+                            emailSent = true;
+                        }
+                        catch (ExceptionWithCode ex) when (ex.Message.Contains("sending emails is not configured"))
+                        {
+                            _logger.LogWarning($"Email not configured - invitation email not sent to {req.email}. User will need to be notified manually or use mailto link.");
+                            // Continue without failing - user can manually send invite via mailto link
+                        }
+
+                        workspaceUser.invitationEmail = new InvitationEmailModel
+                        {
+                            sentAt = DateTime.Now,
+                            emailTo = req.email,
+                            emailSent = emailSent,
+                            emailSubject = emailSubject,
+                            emailBody = emailBody
+                        };
+                        workspaceUser = await _revDb.AddorUpdateAsync(workspaceUser);
+
+                        // Audit log user invitation
+                        await _auditHelper.LogUserCreatedAsync(
+                            workspaceUser.userId,
+                            req.email,
+                            isAdmin: req.isAdmin,
+                            wasInvited: true);
                     }
 
-                    workspaceUser.invitationEmail = new InvitationEmailModel
-                    {
-                        sentAt = DateTime.Now,
-                        emailTo = req.email
-                    };
-                    workspaceUser = await _revDb.AddorUpdateAsync(workspaceUser);
 
-
+                }
+                else if (null == existing)
+                {
+                    // Audit log new user creation (not invited, but manually added)
+                    await _auditHelper.LogUserCreatedAsync(
+                        workspaceUser.userId,
+                        req.email ?? workspaceUser.userId,
+                        isAdmin: req.isAdmin,
+                        wasInvited: false);
                 }
 
             }));
@@ -525,13 +586,11 @@ namespace components.permissions
 
         }
 
-        async Task SendMail(JoinInvitationModel req, string toEmail, string bCCEmail, ProvisionedResults provisioData)
+        (string subject, string body) GenerateInvitationEmailContent(JoinInvitationModel req, ProvisionedResults provisioData)
         {
             var invitation = JsonConvert.SerializeObject(req);
-
             var hash = _signer.createSignedHash(invitation);
             var origin = this.originFromURL("/api/permissions", _logger);
-
 
             var text = $"Hello {req.nickName}\nThe administrator for Rev Workspace {req.workspace} has invited you to join their REV workspace {origin}\n";
 
@@ -571,10 +630,19 @@ namespace components.permissions
                 + "\n2. Get started with REV  https://www.scanrev.com/supportkb/quick-start-guide-for-rev-users/"
                 + "\n\nRegards\nYour ScanRev team\nhttps://scanrev.com";
 
+            var subject = $"You are invited to join REV workspace {req.workspace}";
+
+            return (subject, text);
+        }
+
+        async Task SendMail(JoinInvitationModel req, string toEmail, string bCCEmail, ProvisionedResults provisioData)
+        {
+            var (subject, body) = GenerateInvitationEmailContent(req, provisioData);
+
             await _mailsender.sendEmailAsync(
                 new[] { toEmail },
-                $"You are invited to join REV workspace {req.workspace}",
-                text,
+                subject,
+                body,
                 mailbCcList: string.IsNullOrWhiteSpace(bCCEmail) ? null : new[] { bCCEmail }
                 );
 

@@ -198,6 +198,8 @@ namespace components.workspace
                 var pendinQ = collection.Find(d => d.catalogued != true && d.isPlaceHolder != true);
                 var pedning = await pendinQ.CountDocumentsAsync();
 
+                _logger.LogInformation($"[CATALOGUED CHECK] Database: {dbName}, Uncatalogued count: {pedning}");
+
                 if (pedning > 0)
                 {
 
@@ -217,11 +219,52 @@ namespace components.workspace
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"getMessagesforWorkspace: failed to check for trial");
+                _logger.LogError(ex, $"getMessagesforWorkspace: failed to check for catalogued documents");
             }
 
 
             return ret;
+        }
+
+        [HttpPost("fixUncatalogued")]
+        public async Task<object> fixUncatalogued()
+        {
+            try
+            {
+                var workspace = _resolver.getCurrentWorkspace();
+                var dbName = components.workspace.Resolver.revdbNameFromWorkspaceId(workspace.id);
+                var revDb = new MongoDbService.RevDatabase(
+                    components.workspace.Resolver.getMongoConnectionstring(_configuration),
+                    dbName,
+                    workspace);
+                var documentsCollection = revDb.getCollection<DocumentModel>();
+
+                // Find uncatalogued documents
+                var uncataloguedDocs = await documentsCollection.Find(d => d.catalogued != true && d.isPlaceHolder != true).ToListAsync();
+
+                _logger.LogInformation($"[FIX UNCATALOGUED] Found {uncataloguedDocs.Count} uncatalogued documents");
+
+                int fixedCount = 0;
+                foreach (var doc in uncataloguedDocs)
+                {
+                    _logger.LogInformation($"[FIX UNCATALOGUED] Doc {doc.id}: pages count={doc.pages?.Count() ?? 0}");
+
+                    // Mark document as catalogued
+                    await documentsCollection.UpdateOneAsync(
+                        d => d.id == doc.id,
+                        MongoDB.Driver.Builders<DocumentModel>.Update.Set(d => d.catalogued, true)
+                    );
+                    fixedCount++;
+                    _logger.LogInformation($"[FIX UNCATALOGUED] Marked document {doc.id} as catalogued");
+                }
+
+                return new { success = true, found = uncataloguedDocs.Count, fixedCount = fixedCount };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[FIX UNCATALOGUED] Error fixing uncatalogued documents");
+                return new { success = false, error = ex.Message };
+            }
         }
 
         #region administration

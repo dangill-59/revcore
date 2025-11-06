@@ -260,14 +260,36 @@ class UserRolesView extends React.Component<ViewProps, {}> {
                                 <br />
 
                                 {selectedUserOption.value.workspaceUser.invitationEmail && (
-                                  <span className='text-warning'>
-                                    The invitation to join was sent at{' '}
-                                    {moment(
-                                      selectedUserOption.value.workspaceUser.invitationEmail.sentAt,
-                                    )
-                                      .local()
-                                      .format('LLLL')}
-                                  </span>
+                                  <>
+                                    {selectedUserOption.value.workspaceUser.invitationEmail.emailSent ? (
+                                      <span className='text-success'>
+                                        <i className='fa fa-check-circle'></i> Invitation email sent at{' '}
+                                        {moment(
+                                          selectedUserOption.value.workspaceUser.invitationEmail.sentAt,
+                                        )
+                                          .local()
+                                          .format('LLLL')}
+                                      </span>
+                                    ) : (
+                                      <div className='alert alert-info' style={{ marginTop: 10, marginBottom: 10 }}>
+                                        <i className='fa fa-info-circle'></i> <strong>Email not configured</strong> - Click the button below to send the invitation via your email client:
+                                        <br />
+                                        <a
+                                          href={`mailto:${encodeURIComponent(
+                                            selectedUserOption.value.workspaceUser.invitationEmail.emailTo,
+                                          )}?subject=${encodeURIComponent(
+                                            selectedUserOption.value.workspaceUser.invitationEmail.emailSubject || '',
+                                          )}&body=${encodeURIComponent(
+                                            selectedUserOption.value.workspaceUser.invitationEmail.emailBody || '',
+                                          )}`}
+                                          className='btn btn-primary btn-sm'
+                                          style={{ marginTop: 10 }}
+                                        >
+                                          <i className='fa fa-envelope'></i> Open in Email Client
+                                        </a>
+                                      </div>
+                                    )}
+                                  </>
                                 )}
                               </div>
                             )}

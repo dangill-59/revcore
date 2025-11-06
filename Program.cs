@@ -26,6 +26,8 @@ using Prometheus;
 using revCore2site.Controllers;
 using Microsoft.OpenApi.Models;
 using System.Linq;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -214,7 +216,11 @@ builder.Services.addRepositoryService(builder.Configuration);
 
 builder.Services.AddScoped<components.billing.CheckBilling>();
 
-builder.Services.AddTransient<IHttpContextAccessor, HttpContextAccessor>();
+builder.Services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
+
+// Register Audit Log Services
+builder.Services.AddScoped<commonInterfaces.interfaces.IAuditLogService, revCore2site.Services.AuditLogService>();
+builder.Services.AddScoped<revCore2site.Services.AuditHelper>();
 
 builder.Services.AddTransient<reactBase.ICacheProvider, reactBase.CacheProvider>();
 
@@ -237,6 +243,78 @@ builder.Services.AddTransient<IAuthorizationHandler, AllAccessOrJobAuthHandler>(
 builder.Services.AddTransient<components.billing.ISubscriberBillingInfo, components.billing.BillingService>();
 
 builder.Services.AddTransient<components.revLogin.IApplianceUserManager, components.revLogin.ApplianceUserManager>();
+
+// Configure HSTS for production (HTTPS enforcement)
+if (!builder.Environment.IsDevelopment())
+{
+    builder.Services.AddHsts(options =>
+    {
+        options.Preload = true;
+        options.IncludeSubDomains = true;
+        options.MaxAge = TimeSpan.FromDays(365);
+    });
+}
+
+// Configure Rate Limiting for authentication and API endpoints
+builder.Services.AddRateLimiter(options =>
+{
+    // Fixed window rate limiter for authentication endpoints (protect against brute force)
+    options.AddFixedWindowLimiter("auth", limiterOptions =>
+    {
+        limiterOptions.PermitLimit = 10;
+        limiterOptions.Window = TimeSpan.FromMinutes(1);
+        limiterOptions.QueueProcessingOrder = System.Threading.RateLimiting.QueueProcessingOrder.OldestFirst;
+        limiterOptions.QueueLimit = 2;
+    });
+
+    // Sliding window rate limiter for general API endpoints
+    options.AddSlidingWindowLimiter("api", limiterOptions =>
+    {
+        limiterOptions.PermitLimit = 100;
+        limiterOptions.Window = TimeSpan.FromMinutes(1);
+        limiterOptions.SegmentsPerWindow = 4;
+        limiterOptions.QueueProcessingOrder = System.Threading.RateLimiting.QueueProcessingOrder.OldestFirst;
+        limiterOptions.QueueLimit = 10;
+    });
+
+    options.RejectionStatusCode = 429; // Too Many Requests
+});
+
+// Add CORS for Next.js frontend integration
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        // In development, allow localhost for Next.js frontend
+        if (builder.Environment.IsDevelopment())
+        {
+            policy.WithOrigins("http://localhost:3000", "https://localhost:3000")
+                  .AllowAnyHeader()
+                  .AllowAnyMethod()
+                  .AllowCredentials();
+        }
+        else
+        {
+            // In production, read allowed origins from configuration
+            var allowedOrigins = builder.Configuration.GetSection("cors:allowedOrigins").Get<string[]>();
+            if (allowedOrigins != null && allowedOrigins.Length > 0)
+            {
+                policy.WithOrigins(allowedOrigins)
+                      .AllowAnyHeader()
+                      .AllowAnyMethod()
+                      .AllowCredentials();
+            }
+            else
+            {
+                // No CORS allowed in production if not configured
+                policy.WithOrigins()
+                      .AllowAnyHeader()
+                      .AllowAnyMethod()
+                      .DisallowCredentials();
+            }
+        }
+    });
+});
 
 builder.Services.AddControllersWithViews().AddNewtonsoftJson();
 builder.Services.AddRazorPages().AddNewtonsoftJson();
@@ -265,10 +343,14 @@ builder.Services.AddTransient<components.listPages.IPageDeleteService, component
 services.AddSingleton<IHostedService, components.listPages.PageDeleteTask>();
 */
 
+// Register ImageProcessingBackgroundService for in-process PDF/image processing
+// This consolidates image processing into the main API, eliminating the need for imageProcMQ worker and RabbitMQ
+builder.Services.AddHostedService<revCore2site.Services.ImageProcessingBackgroundService>();
+
 
 builder.Services.AddSingleton<IAuthorizationHandler, components.support.SupportPeopleAuthHandler>();
 
-builder.Services.AddSignalR().AddRedis(builder.Configuration["redis:Configuration"]);
+builder.Services.AddSignalR().AddStackExchangeRedis(builder.Configuration["redis:Configuration"]);
 
 
 ///OLD RabbitQ services
@@ -320,10 +402,34 @@ app.UseExceptionHandler(
                             builder.AddDebug();
                         });
 
-                        var error = reactBase.ErrorMessage.SetStatusGetResult(context, exception, loggerFactory.CreateLogger("Global-Exception"));
-                        context.Response.ContentType = "application/json";
+                        var logger = loggerFactory.CreateLogger("Global-Exception");
 
-                        await context.Response.WriteAsync(JsonConvert.SerializeObject(error)).ConfigureAwait(false);
+                        // In production, sanitize error details to prevent information leakage
+                        if (app.Environment.IsProduction())
+                        {
+                            // Log the full exception for debugging
+                            logger.LogError(exception, "Unhandled exception occurred");
+
+                            // Return generic error to client (no stack trace or internal details)
+                            context.Response.StatusCode = 500;
+                            context.Response.ContentType = "application/json";
+
+                            var genericError = new
+                            {
+                                error = "An internal server error occurred",
+                                statusCode = 500,
+                                timestamp = DateTime.UtcNow
+                            };
+
+                            await context.Response.WriteAsync(JsonConvert.SerializeObject(genericError)).ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            // In development, provide detailed error information
+                            var error = reactBase.ErrorMessage.SetStatusGetResult(context, exception, logger);
+                            context.Response.ContentType = "application/json";
+                            await context.Response.WriteAsync(JsonConvert.SerializeObject(error)).ConfigureAwait(false);
+                        }
                     });
               });
 
@@ -335,6 +441,19 @@ if (useSwagger)
         c.SwaggerEndpoint("/swagger/v1/swagger.json", "Rev API V1");
     });
 }
+
+// Enable HTTPS enforcement for production
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+}
+app.UseHttpsRedirection();
+
+// Enable rate limiting
+app.UseRateLimiter();
+
+// Add security headers middleware
+app.UseMiddleware<Utilities.SecurityHeadersMiddleware>();
 
 var customStorage = builder.Configuration["s3Storage:customEndpoint"];
 if (!string.IsNullOrWhiteSpace(customStorage))
@@ -377,6 +496,9 @@ app.UseStaticFiles(new StaticFileOptions
 });
 
 app.UseRouting();
+
+// Enable CORS
+app.UseCors();
 
 app.UseAuthentication();
 app.UseAuthorization();

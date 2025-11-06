@@ -94,10 +94,6 @@ class MainNav extends React.PureComponent<ConnectedProps & { dispatch }, {}> {
     const distributeBadge =
       distributeBadgeKeys.length > 0 && nav.menuMap.distribueBadge[distributeBadgeKeys[0]].node;
 
-    const openInNewTab = (url) => {
-      window.open(url, '_blank', 'noreferrer');
-    };
-
     return (
       <Navbar collapseOnSelect className='mainNav'>
         <Navbar.Header style={headerStyle}>
@@ -138,21 +134,6 @@ class MainNav extends React.PureComponent<ConnectedProps & { dispatch }, {}> {
                     </span>
                   </NavItem>
                 ))}
-
-              <NavItem>
-                <button
-                  role='link'
-                  onClick={() => openInNewTab('https://pdftotiff.sonopaper.com')}
-                  style={{ backgroundColor: 'transparent', border: 'none' }}
-                >
-                  <OverlayTrigger
-                    placement='bottom'
-                    overlay={<Tooltip id='searchtooltip'>Convert pdf to tiff</Tooltip>}
-                  >
-                    <i className='fa fa-file-pdf-o fa-2x' aria-hidden='true'></i>
-                  </OverlayTrigger>
-                </button>
-              </NavItem>
 
               {nav &&
                 nav.menuMap &&

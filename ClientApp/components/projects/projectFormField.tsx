@@ -199,17 +199,27 @@ const ProjectFieldForm: React.StatelessComponent<ViewProps> = ({
         </FormGroup>
       )}
 
-      {(field.restrictions || field.documentRestriction) && field.userlistValues && field.userlistValues.length > 0 && (
-        <FormGroup bsSize='small' style={{ padding: '10px', border: '1px solid #ddd', borderRadius: '4px', marginBottom: '10px' }}>
-          <FieldRestrictionsManager
-            restrictions={field.restrictions || []}
-            allUsers={[]} // TODO: Fetch from API
-            allRoles={allroles || []}
-            fieldValues={field.userlistValues || []}
-            onChange={(newRestrictions) => {
-              dispatch(ensureProjects().updateField(field, 'restrictions', newRestrictions));
-            }}
-          />
+      {field.documentRestriction && (
+        <FormGroup bsSize='small' style={{ padding: '10px', border: '1px solid #ddd', borderRadius: '4px', marginBottom: '10px', backgroundColor: '#f9f9f9' }}>
+          <div style={{ marginBottom: 10 }}>
+            <strong>Document Access Restrictions</strong>
+          </div>
+          {(!field.userlistValues || field.userlistValues.length === 0) ? (
+            <div className='alert alert-info' style={{ marginBottom: 0 }}>
+              <i className='fa fa-info-circle'></i> Document restrictions require custom field values.
+              Please set the field type to "Custom values" and add at least one value above.
+            </div>
+          ) : (
+            <FieldRestrictionsManager
+              restrictions={field.restrictions || []}
+              allUsers={[]} // TODO: Fetch from API
+              allRoles={allroles || []}
+              fieldValues={field.userlistValues || []}
+              onChange={(newRestrictions) => {
+                dispatch(ensureProjects().updateField(field, 'restrictions', newRestrictions));
+              }}
+            />
+          )}
         </FormGroup>
       )}
 

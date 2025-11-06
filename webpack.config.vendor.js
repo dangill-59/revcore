@@ -1,23 +1,41 @@
 const path = require('path');
 const webpack = require('webpack');
-const ExtractTextPlugin = require('extract-text-webpack-plugin');
-const merge = require('webpack-merge');
-const BabiliPlugin = require('babili-webpack-plugin');
+const { merge } = require('webpack-merge');
+const TerserPlugin = require('terser-webpack-plugin');
+const MomentLocalesPlugin = require('moment-locales-webpack-plugin');
 
 module.exports = (env) => {
   const isDevBuild = !(env && env.prod);
-  const extractCSS = new ExtractTextPlugin('vendor.css');
 
   const sharedConfig = {
+    mode: isDevBuild ? 'development' : 'production',
     stats: { modules: false },
-    resolve: { extensions: ['.js'] },
+    resolve: {
+      extensions: ['.js'],
+      fallback: {
+        "domain": false,
+        "url": false,
+        "https": false,
+        "http": false
+      }
+    },
     module: {
-      rules: [{ test: /\.(png|woff|woff2|eot|ttf|svg)(\?|$)/, use: 'url-loader?limit=100000' }],
+      rules: [
+        {
+          test: /\.(png|woff|woff2|eot|ttf|svg)(\?|$)/,
+          type: 'asset',
+          parser: {
+            dataUrlCondition: {
+              maxSize: 100000
+            }
+          }
+        }
+      ],
     },
     entry: {
       vendor: [
         'bootstrap',
-        'bootstrap/dist/css/bootstrap.css',
+        //'bootstrap/dist/css/bootstrap.css',  // Skip CSS in vendor bundle to avoid loader issues
         'domain-task',
         'event-source-polyfill',
         'history',
@@ -62,31 +80,32 @@ module.exports = (env) => {
       library: '[name]_[hash]',
     },
     plugins: [
-      new webpack.ProvidePlugin({ $: 'jquery', jQuery: 'jquery' }), // Maps these identifiers to the jQuery package (because Bootstrap expects it to be a global variable)
-      new webpack.NormalModuleReplacementPlugin(/\/iconv-loader$/, require.resolve('node-noop')), // Workaround for https://github.com/andris9/encoding/issues/16
+      new webpack.ProvidePlugin({ $: 'jquery', jQuery: 'jquery' }),
+      new webpack.NormalModuleReplacementPlugin(/\/iconv-loader$/, require.resolve('node-noop')),
       new webpack.DefinePlugin({
         'process.env.NODE_ENV': isDevBuild ? '"development"' : '"production"',
       }),
+      // Strip all locales except "en" from moment.js
+      new MomentLocalesPlugin({
+        localesToKeep: ['en'],
+      }),
     ],
+    optimization: isDevBuild ? {} : {
+      minimize: true,
+      minimizer: [
+        new TerserPlugin(),
+      ],
+    },
   };
 
   const clientBundleConfig = merge(sharedConfig, {
     output: { path: path.join(__dirname, 'wwwroot', 'dist') },
-    module: {
-      rules: [
-        {
-          test: /\.css(\?|$)/,
-          use: extractCSS.extract({ use: isDevBuild ? 'css-loader' : 'css-loader?minimize' }),
-        },
-      ],
-    },
     plugins: [
-      extractCSS,
       new webpack.DllPlugin({
         path: path.join(__dirname, 'wwwroot', 'dist', '[name]-manifest.json'),
         name: '[name]_[hash]',
       }),
-    ].concat(isDevBuild ? [] : [new BabiliPlugin({}, { comments: false })]),
+    ],
   });
 
   const serverBundleConfig = merge(sharedConfig, {
@@ -95,9 +114,6 @@ module.exports = (env) => {
     output: {
       path: path.join(__dirname, 'ClientApp', 'dist'),
       libraryTarget: 'commonjs2',
-    },
-    module: {
-      rules: [{ test: /\.css(\?|$)/, use: isDevBuild ? 'css-loader' : 'css-loader?minimize' }],
     },
     entry: { vendor: ['aspnet-prerendering', 'react-dom/server'] },
     plugins: [

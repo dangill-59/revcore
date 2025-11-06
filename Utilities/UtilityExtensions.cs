@@ -265,7 +265,7 @@ namespace Utilities
 
 #if DEBUG
 				//var debugTmpUrl = "http://host.docker.internal:19000";
-                var debugTmpUrl = "http://host.docker.internal:56395";
+                var debugTmpUrl = "http://localhost:9000";
                 return debugTmpUrl;
 #endif
 

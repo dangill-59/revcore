@@ -28,6 +28,7 @@ namespace components.Projects
         readonly IWorkspaceResolver _resolver;
         readonly IRevMQBus _mq;
         readonly RevRepositoryServices.IRepositoryManager _repoManager;
+        readonly revCore2site.Services.AuditHelper _auditHelper;
 
         public ProjectsController(commonInterfaces.IRevDatabase revDb,
             revElasticSearch.IESMapper esMapper,
@@ -35,7 +36,8 @@ namespace components.Projects
             IConfiguration config,
             IWorkspaceResolver resolver,
             RevRepositoryServices.IRepositoryManager repoManager,
-            ILogger<ProjectsController> logger)
+            ILogger<ProjectsController> logger,
+            revCore2site.Services.AuditHelper auditHelper)
         {
             _revDb = revDb;
             _logger = logger;
@@ -43,6 +45,7 @@ namespace components.Projects
             _resolver = resolver;
             _mq = mq;
             _repoManager = repoManager;
+            _auditHelper = auditHelper;
         }
 
         [HttpGet("details/{projectName}")]
@@ -199,7 +202,80 @@ namespace components.Projects
             }
 
             var currentWorkSpace = this.ensureWorkspaceAdmin(_resolver);
+
+            // Capture state before save for audit logging
+            var isNewRepository = string.IsNullOrWhiteSpace(project.id);
+            ProjectModel existingProject = null;
+            if (!isNewRepository)
+            {
+                existingProject = _revDb.getQueryable<ProjectModel>().FirstOrDefault(p => p.id == project.id);
+            }
+            var newFields = project.fields?.Where(f => string.IsNullOrWhiteSpace(f.id)).ToArray() ?? new ProjectFieldModel[0];
+
             var updatedProject = await _repoManager.SaveProjectAsync(project, confirmedFieldsToDelete, confirmedFieldsToChange);
+
+            // Comprehensive audit logging
+            if (isNewRepository)
+            {
+                var metadata = new Dictionary<string, object>();
+                if (newFields.Length > 0)
+                {
+                    metadata["fieldsCount"] = newFields.Length;
+                    metadata["fields"] = string.Join(", ", newFields.Select(f => f.displayName));
+                }
+                if (project.fullTextOcr)
+                {
+                    metadata["fullTextOcr"] = true;
+                }
+
+                await _auditHelper.LogRepositoryCreatedAsync(
+                    repositoryId: updatedProject.id,
+                    repositoryName: updatedProject.name,
+                    metadata: metadata.Count > 0 ? metadata : null);
+            }
+            else
+            {
+                var oldValues = new Dictionary<string, object>();
+                var newValues = new Dictionary<string, object>();
+                var metadata = new Dictionary<string, object>();
+
+                // Track field additions
+                if (newFields.Length > 0)
+                {
+                    metadata["fieldsAdded"] = newFields.Length;
+                    metadata["addedFields"] = string.Join(", ", newFields.Select(f => f.displayName));
+                }
+
+                // Track field deletions
+                var fieldnamesToDelete = (confirmedFieldsToDelete ?? "").Split(',').Where(f => !string.IsNullOrEmpty(f.Trim())).ToArray();
+                if (fieldnamesToDelete.Length > 0)
+                {
+                    metadata["fieldsDeleted"] = fieldnamesToDelete.Length;
+                    metadata["deletedFields"] = string.Join(", ", fieldnamesToDelete);
+                }
+
+                // Track field renames
+                var fieldnamesToChange = (confirmedFieldsToChange ?? "").Split(',').Where(f => !string.IsNullOrEmpty(f.Trim())).ToArray();
+                if (fieldnamesToChange.Length > 0)
+                {
+                    metadata["fieldsRenamed"] = fieldnamesToChange.Length;
+                    metadata["renamedFields"] = string.Join(", ", fieldnamesToChange);
+                }
+
+                // Track full-text OCR changes
+                if (existingProject != null && existingProject.fullTextOcr != project.fullTextOcr)
+                {
+                    oldValues["fullTextOcr"] = existingProject.fullTextOcr;
+                    newValues["fullTextOcr"] = project.fullTextOcr;
+                }
+
+                await _auditHelper.LogRepositoryUpdatedAsync(
+                    repositoryId: updatedProject.id,
+                    repositoryName: updatedProject.name,
+                    oldValues: oldValues.Count > 0 ? oldValues : null,
+                    newValues: newValues.Count > 0 ? newValues : null,
+                    metadata: metadata.Count > 0 ? metadata : null);
+            }
 
             return updatedProject;
         }

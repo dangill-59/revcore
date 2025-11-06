@@ -4,4 +4,7 @@
 export interface InvitationEmailModel {
   sentAt: Date;
   emailTo: string;
+  emailSent: boolean;
+  emailSubject: string;
+  emailBody: string;
 }

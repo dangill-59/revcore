@@ -20,6 +20,7 @@ import RepositoryView from '../projects/manage';
 import { UserEditModel } from '../../generated/UserEditModel';
 import UserRoleView from '../permissions/userRoles';
 import WorkSpaceConfig from './configurations';
+import AuditReports from '../audit/AuditReports';
 import { connect } from 'react-redux';
 import { createLoaderView } from 'base/asyncLoader';
 import ensureProjets from '../projects/reducer';
@@ -65,6 +66,10 @@ class ManageWorkspace extends React.PureComponent<ViewProps, {}> {
 
             <Tab eventKey='users' title='Team'>
               <UserRoleView />
+            </Tab>
+
+            <Tab eventKey='audit' title='Audit Reports'>
+              <AuditReports />
             </Tab>
 
             {/*<button onClick={() => dispatch(ensureProjets().templateSearchChanged(''))}>Repo button</button>*/}

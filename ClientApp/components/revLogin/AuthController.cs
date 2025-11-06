@@ -18,8 +18,9 @@ using MongoDB.Driver;
 using Newtonsoft.Json;
 using reactBase;
 using Utilities;
+using revCore2site.Services;
 
-//https://medium.com/@ozgurgul/asp-net-core-2-0-webapi-jwt-authentication-with-identity-mysql-3698eeba6ff8 
+//https://medium.com/@ozgurgul/asp-net-core-2-0-webapi-jwt-authentication-with-identity-mysql-3698eeba6ff8
 
 namespace components.revLogin
 {
@@ -41,6 +42,7 @@ namespace components.revLogin
         readonly IEmailSenderService _emailService;
 
         readonly IDistributedCache _distributedCache;
+        readonly AuditHelper _auditHelper;
 
         public AuthController(commonInterfaces.IRevAuthDatabase revDb,
             IJWTCreater jwtCreater,
@@ -52,7 +54,8 @@ namespace components.revLogin
             workspace.IWorkspaceResolver workSpace,
             IApplianceUserManager applianceMgr,
             IEmailSenderService emailService,
-            ILogger<AuthController> logger)
+            ILogger<AuthController> logger,
+            AuditHelper auditHelper)
         {
             _authDb = revDb;
 
@@ -65,6 +68,7 @@ namespace components.revLogin
             _logger = logger;
             _emailService = emailService;
             _distributedCache = distributedCache;
+            _auditHelper = auditHelper;
         }
 
 
@@ -438,6 +442,9 @@ namespace components.revLogin
             var id_token = _jwtCreater.createForInteractive(user, this.clientLocation(), validSec, claims);
 
             var oAuthToken = await _jwtCreater.saveOAuthtoCacheAsync(JsonConvert.SerializeObject(new { id_token }), _workSpaceResolver.getAuthenticationWorkspace());
+
+            // Log user login
+            await _auditHelper.LogUserLoginAsync(user.id, user.fullName ?? user.UserName, user.emailaddress);
 
             return oAuthToken.jwtToken;
         }

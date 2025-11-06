@@ -480,3 +480,6 @@ $RECYCLE.BIN/
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
+# Webpack build outputs
+ClientApp/dist/
+wwwroot/dist/

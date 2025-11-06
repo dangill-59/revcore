@@ -129,6 +129,21 @@ const AccessTknView = () => (
   />
 );
 
+const AuditReportsView = () => (
+  <SplitPoint
+    prompt='Loading audit reports...'
+    loader={(resolve) => {
+      require.ensure(
+        [],
+        function (require) {
+          resolve((require('./components/audit/AuditReports') as any).default);
+        },
+        'audit',
+      );
+    }}
+  />
+);
+
 export const routes = (
   <Layout>
     <LauncNative />

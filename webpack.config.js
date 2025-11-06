@@ -1,20 +1,23 @@
 const path = require('path');
 const webpack = require('webpack');
-const ExtractTextPlugin = require('extract-text-webpack-plugin');
-const CheckerPlugin = require('awesome-typescript-loader').CheckerPlugin;
-const merge = require('webpack-merge');
-const BabiliPlugin = require('babili-webpack-plugin');
-const HardSourceWebpackPlugin = require('hard-source-webpack-plugin');
+const MiniCssExtractPlugin = require('mini-css-extract-plugin');
+const { merge } = require('webpack-merge');
+const TerserPlugin = require('terser-webpack-plugin');
+const MomentLocalesPlugin = require('moment-locales-webpack-plugin');
 
 module.exports = (env) => {
   const isDevBuild = !(env && env.prod);
 
   // Configuration in common to both client-side and server-side bundles
   const sharedConfig = () => ({
+    mode: isDevBuild ? 'development' : 'production',
     stats: { modules: false },
     resolve: {
       extensions: ['.js', '.jsx', '.ts', '.tsx'],
       modules: [path.resolve(__dirname), 'node_modules', 'reactWebUtils', 'pullRequests'],
+      fallback: {
+        "path": false
+      }
     },
     output: {
       filename: '[name].js',
@@ -26,18 +29,51 @@ module.exports = (env) => {
         {
           test: /\.jsx$/,
           exclude: /node_modules/,
-          loader: 'babel-loader',
+          use: {
+            loader: 'babel-loader',
+            options: {
+              presets: ['@babel/preset-env', '@babel/preset-react']
+            }
+          }
         },
-        { test: /\.tsx?$/, use: 'awesome-typescript-loader?silent=false&errorsAsWarnings=true' },
-        //{ test: /\.tsx?$/, use: 'awesome-typescript-loader?silent=false' },
-        { test: /\.(png|jpg|jpeg|gif|svg)$/, use: 'url-loader?limit=25000' },
         {
-          test: /\.(woff2|woff|ttf|eot|svg)(\?v=[a-z0-9]\.[a-z0-9]\.[a-z0-9])?$/,
-          use: 'url-loader?limit=25000',
+          test: /\.tsx?$/,
+          use: {
+            loader: 'ts-loader',
+            options: {
+              transpileOnly: true,  // Faster builds, type checking done separately
+              compilerOptions: {
+                noEmit: false
+              }
+            }
+          }
+        },
+        {
+          test: /\.(png|jpg|jpeg|gif|svg)$/,
+          type: 'asset',
+          parser: {
+            dataUrlCondition: {
+              maxSize: 25000
+            }
+          }
+        },
+        {
+          test: /\.(woff2|woff|ttf|eot)(\?v=[a-z0-9]\.[a-z0-9]\.[a-z0-9])?$/,
+          type: 'asset',
+          parser: {
+            dataUrlCondition: {
+              maxSize: 25000
+            }
+          }
         },
       ],
     },
-    plugins: [new CheckerPlugin()].concat(
+    plugins: [
+      // Strip all locales except "en"
+      new MomentLocalesPlugin({
+        localesToKeep: ['en'],
+      }),
+    ].concat(
       isDevBuild
         ? [
             // Plugins that apply in development builds only
@@ -48,26 +84,34 @@ module.exports = (env) => {
               /\/iconv-loader$/,
               require.resolve('node-noop'),
             ), // Workaround for https://github.com/andris9/encoding/issues/16
-            new webpack.DefinePlugin({
-              'process.env.NODE_ENV': '"production"',
-            }),
-
-            /* new webpack.optimize.CommonsChunkPlugin({
-                    name: 'commons',
-                    // (the commons chunk name)
-
-                    filename: 'commons.js',
-                    // (the filename of the commons chunk)
-
-                   minChunks: 2,
-                    // (Modules must be shared between 3 entries)
-
-                    // chunks: ["pageA", "pageB"],
-                    // (Only use these entries)
-                })
-                */
           ],
     ),
+    optimization: isDevBuild ? {} : {
+      minimize: true,
+      minimizer: [
+        new TerserPlugin({
+          terserOptions: {
+            parse: {
+              ecma: 8,
+            },
+            compress: {
+              ecma: 5,
+              warnings: false,
+              comparisons: false,
+              inline: 2,
+            },
+            mangle: {
+              safari10: true,
+            },
+            output: {
+              ecma: 5,
+              comments: false,
+              ascii_only: true,
+            },
+          },
+        }),
+      ],
+    },
   });
 
   // Configuration for client-side bundle suitable for running in browsers
@@ -76,26 +120,39 @@ module.exports = (env) => {
     entry: { 'main-client': './reactWebUtils/base/boot-client.tsx' },
     module: {
       rules: [
-        //{ test: /\.css$/, use: ExtractTextPlugin.extract({ use: isDevBuild ? ['style-loader', 'css-loader'] : ['style-loader', 'css-loader?minimize'] }) },
         {
           test: /\.css$/,
-          use: ExtractTextPlugin.extract({
-            use: isDevBuild ? 'css-loader' : 'css-loader?minimize',
-          }),
+          use: [
+            isDevBuild ? 'style-loader' : MiniCssExtractPlugin.loader,
+            {
+              loader: 'css-loader',
+              options: isDevBuild ? {} : {
+                sourceMap: false
+              }
+            }
+          ],
         },
         {
           test: /\.less$/,
-          use: ExtractTextPlugin.extract([
-            isDevBuild ? 'css-loader' : 'css-loader?minimize',
-            'less-loader',
-          ]),
+          use: [
+            isDevBuild ? 'style-loader' : MiniCssExtractPlugin.loader,
+            {
+              loader: 'css-loader',
+              options: isDevBuild ? {} : {
+                sourceMap: false
+              }
+            },
+            'less-loader'
+          ],
         },
       ],
     },
     output: { path: path.join(__dirname, clientBundleOutputDir) },
     plugins: [
-      new ExtractTextPlugin({ filename: 'site.css', disable: false, allChunks: true }),
-
+      new MiniCssExtractPlugin({
+        filename: 'site.css',
+        chunkFilename: '[id].css',
+      }),
       new webpack.DefinePlugin({
         'process.env.NODE_ENV': isDevBuild ? '"development"' : '"production"',
       }),
@@ -103,28 +160,16 @@ module.exports = (env) => {
       isDevBuild
         ? [
             // Plugins that apply in development builds only
-            new webpack.SourceMapDevToolPlugin({
-              filename: '[file].map', // Remove this line if you prefer inline source maps
-              moduleFilenameTemplate: path.relative(clientBundleOutputDir, '[resourcePath]'), // Point sourcemap entries to the original file locations on disk
-            }),
             new webpack.DllReferencePlugin({
               context: __dirname,
               manifest: require('./wwwroot/dist/vendor-manifest.json'),
             }),
-            new HardSourceWebpackPlugin(),
           ]
         : [
-            /*
- * uglify gives better errors
- 
- */ new webpack.optimize.UglifyJsPlugin({
-              minimize: true,
-            }),
-
             // Plugins that apply in production builds only
-            //new BabiliPlugin({}, { comments: false })
           ],
     ),
+    devtool: isDevBuild ? 'eval-source-map' : false,
   });
 
   // Configuration for server-side (prerendering) bundle suitable for running in Node
@@ -133,11 +178,19 @@ module.exports = (env) => {
     entry: { 'main-server': './reactWebUtils/base/boot-server.tsx' },
     module: {
       rules: [
-        { test: /\.css$/, use: 'null-loader' },
-        { test: /\.less$/, use: 'null-loader' },
+        { test: /\.css$/, type: 'asset/source', generator: { emit: false } },
+        { test: /\.less$/, type: 'asset/source', generator: { emit: false } },
         {
           test: /\.clientOnly.ts/,
-          loaders: ['awesome-typescript-loader', './reactWebUtils/base/no-loader'],
+          use: [
+            {
+              loader: 'ts-loader',
+              options: {
+                transpileOnly: true
+              }
+            },
+            './reactWebUtils/base/no-loader'
+          ],
         },
       ],
     },
@@ -151,7 +204,6 @@ module.exports = (env) => {
               sourceType: 'commonjs2',
               name: './vendor',
             }),
-            new HardSourceWebpackPlugin(),
           ]
         : [],
     ),
