@@ -63,7 +63,19 @@ namespace components.listPages
                 .Where(c => c.owner == user && c.id == cartId)
                 .Single();
 
+            FilterDeletedPages(cart);
             return cart;
+        }
+
+        /// <summary>
+        /// Filters out deleted pages from a cart/scan batch before returning to frontend
+        /// </summary>
+        private static void FilterDeletedPages(ScanBatchModel cart)
+        {
+            if (cart?.pages != null)
+            {
+                cart.pages = cart.pages.Where(p => !p.isDeleted).ToArray();
+            }
         }
 
 
@@ -133,12 +145,20 @@ namespace components.listPages
 
             var ret = query.ToArray();
 
+            // Filter out deleted pages from all carts
+            foreach (var cart in ret)
+            {
+                FilterDeletedPages(cart);
+            }
+
             if (ret.Length == 0)
             {
                 if (string.IsNullOrWhiteSpace(name))
                 {
                     _logger.LogDebug("user has no primary cart creating one now");
-                    return new[] { await EnsurePrimaryCart(_revDb, user) };
+                    var primaryCart = await EnsurePrimaryCart(_revDb, user);
+                    FilterDeletedPages(primaryCart);
+                    return new[] { primaryCart };
                 }
             }
 

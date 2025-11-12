@@ -645,6 +645,22 @@ export class ListPagesHelper<T extends EditablePageHolder> extends reducerHelper
             .then(() => {
               const newPages = _.filter(pagesArray, (p) => !_.includes(toDeleteIds, p.id));
 
+              // Clear evaporate.js upload cache for deleted pages
+              // This prevents deleted pages from reappearing due to localStorage cache
+              try {
+                const awsUploads = localStorage.getItem('awsUploads');
+                if (awsUploads) {
+                  const uploads = JSON.parse(awsUploads);
+                  toDeleteIds.forEach((pageId) => {
+                    delete uploads[pageId];
+                  });
+                  localStorage.setItem('awsUploads', JSON.stringify(uploads));
+                  console.log(`Cleared ${toDeleteIds.length} pages from awsUploads localStorage`);
+                }
+              } catch (e) {
+                console.warn('Failed to clear awsUploads from localStorage:', e);
+              }
+
               dispatch(_mine.myDocsHelper.updateActiveDocumentPages(Promise.resolve(newPages)));
               return true;
             });

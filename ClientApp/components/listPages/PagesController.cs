@@ -21,6 +21,7 @@ using Utilities;
 using revMQAbstractions;
 using components.lookup;
 using MongoDbService;
+using MongoDB.Bson;
 using MongoDB.Driver;
 using System.Collections.Concurrent;
 using NeoSmart.AsyncLock;
@@ -101,6 +102,17 @@ namespace components.listPages
         readonly static string DEFAULT_SCAN_BATCH = "defaultscanbatch";
 
         /// <summary>
+        /// Filters out deleted pages from a PageHolderModel before returning to frontend
+        /// </summary>
+        static void FilterDeletedPages(PageHolderModel pageHolder)
+        {
+            if (pageHolder?.pages != null)
+            {
+                pageHolder.pages = pageHolder.pages.Where(p => !p.isDeleted).ToArray();
+            }
+        }
+
+        /// <summary>
         /// checks cart ownership and creates default if emptty cart ID
         /// </summary>
         /// <param name="cartId"></param>
@@ -118,13 +130,15 @@ namespace components.listPages
             }
             else
             {
+                // Query as PageHolderModel to get the actual derived type (ScanBatchModel or DocumentModel)
+                // MongoDB will return the correct derived type based on the _t discriminator field
                 var cart = _revDb.getQueryable<PageHolderModel>()
                     .Where(c => c.id == id)
                     .Single();
 
                 this.EnsurePageHolderAccess(cart, _resolver, _revDb, _logger, permissionType);
 
-                _logger.LogDebug($"EnsureOwnerShip: returning cart");
+                _logger.LogDebug($"EnsureOwnerShip: returning cart of type {cart.GetType().Name}");
                 return cart;
             }
 
@@ -232,6 +246,7 @@ namespace components.listPages
             {
                 _logger.LogWarning($"process page -> {escapedPageId} is already being processed (recursion detected), returning early");
                 var cartForDuplicate = await EnsureOwnerShip(cartId, PermissionType.view);
+                FilterDeletedPages(cartForDuplicate);
                 return new PagesEffectedModel
                 {
                     pageHolder = cartForDuplicate,
@@ -246,7 +261,7 @@ namespace components.listPages
 
             var cart = await EnsureOwnerShip(cartId, PermissionType.view);
 
-            var pagesInDocs = await _revDb.getCollection<PageHolderModel>().findPageinDocsAsync(escapedPageId);
+            var pagesInDocs = await _revDb.getCollection<DocumentModel>().findPageinDocsAsync(escapedPageId);
             if (null == pagesInDocs)
                 throw new ExceptionWithCode($"page {escapedPageId} not found");
 
@@ -259,6 +274,7 @@ namespace components.listPages
             {
                 _logger.LogDebug($"process page -> {escapedPageId} is rendered or is non web or marked for offline");
 
+                FilterDeletedPages(cart);
                 return new PagesEffectedModel
                 {
                     pageHolder = cart,
@@ -342,11 +358,12 @@ namespace components.listPages
                     throw new Exception("mongo failed to acknowledge");
                 }
 
-                foreach (var p in cart.pages?.Where(p => p.id == pagesInDocs.page.id))
+                foreach (var p in cart.pages?.Where(p => p.id == pagesInDocs.page.id && !p.isDeleted))
                 {
                     p.offLineProcessingOnly = true;
                 }
 
+                FilterDeletedPages(cart);
                 return new PagesEffectedModel
                 {
                     pageHolder = cart,
@@ -365,6 +382,7 @@ namespace components.listPages
                 _logger.LogDebug($"process page -> {escapedPageId} in-process mode enabled, returning immediately for frontend polling");
 
                 // Return immediately - frontend will poll again to check status
+                FilterDeletedPages(cart);
                 return new PagesEffectedModel
                 {
                     pageHolder = cart,
@@ -377,6 +395,7 @@ namespace components.listPages
             _logger.LogDebug($"process page -> {escapedPageId} render wait completed");
 
             //ret.pageHolder = hasRevImages. FixPageHolderForWireStatic(ret.pageHolder,_storage,_distributedCache, )
+            FilterDeletedPages(ret.pageHolder);
             return ret;
             }
             finally
@@ -398,9 +417,9 @@ namespace components.listPages
                 throw new Exception($"cartId is null");
             }
 
-            var doc = await _revDb.getCollection<DocumentModel>().Find(d => d.id == cartId).SingleOrDefaultAsync();
+            var doc = await _revDb.getCollection<DocumentModel>().Find(d => d.id == cartId && !d.isDeleted).SingleOrDefaultAsync();
 
-            var nonWebPages = doc.pages.Where(p => p.pageType == PageImageTypeModel.nonweb).ToArray();
+            var nonWebPages = doc.pages.Where(p => p.pageType == PageImageTypeModel.nonweb && !p.isDeleted).ToArray();
 
             var noOriGinals = nonWebPages.Where(p => p.originalId == null).ToArray();
             foreach (var originalpage in noOriGinals)
@@ -441,7 +460,7 @@ namespace components.listPages
                     _logger.LogInformation($"{originals} delete from originalFiles collection");
                 }
 
-                var pages = (await _revDb.getCollection<DocumentModel>().Find(d => d.id == cartId).Project(c => c.pages).ToListAsync()).FirstOrDefault()?.ToArray();
+                var pages = (await _revDb.getCollection<DocumentModel>().Find(d => d.id == cartId && !d.isDeleted).Project(c => c.pages).ToListAsync()).FirstOrDefault()?.ToArray();
 
                 var allPagesWithIndex = pages.Select((p, i) => new { p, i }).ToArray();
 
@@ -687,6 +706,7 @@ namespace components.listPages
             await Task.WhenAll(result.effectedPageIds.Select(async pId =>
                 await _mq.publishMessageAsync(new MQDocumentPageUpdated(JobExecutionContext.createNew(), pId, DocumentPageUpdatedAction.added, _revDb.workspaceId))));
 
+            FilterDeletedPages(result.pageHolder);
             return result;
 
 
@@ -716,7 +736,7 @@ namespace components.listPages
 
             if (null != movedImage)
             {
-                var imagesLaterIntheList = pageHolder.pages.Where(p => p.orderNumber >= movedImage.orderNumber && p.id != movedImage.id).ToArray();
+                var imagesLaterIntheList = pageHolder.pages.Where(p => p.orderNumber >= movedImage.orderNumber && p.id != movedImage.id && !p.isDeleted).ToArray();
                 foreach (var p in imagesLaterIntheList)
                     p.orderNumber++;
             }
@@ -727,7 +747,11 @@ namespace components.listPages
                  return true;
              }).ToArray();
 
-            pageHolder.pageOrders = pageHolder.pages.ToDictionary(k => k.id, v => v.orderNumber);
+            // Handle duplicate page IDs gracefully (shouldn't happen, but prevents crashes)
+            pageHolder.pageOrders = pageHolder.pages
+                .GroupBy(p => p.id)
+                .Select(g => g.First())
+                .ToDictionary(k => k.id, v => v.orderNumber);
         }
 
         [HttpDelete]
@@ -743,30 +767,153 @@ namespace components.listPages
         {
             var cart = await EnsureOwnerShip(cartId, PermissionType.delete);
             var currentpages = cart.pages ?? new PageImageModel[] { };
+            var pagesArray = currentpages.ToArray();
 
             var pagestoDelete = currentpages.Where(p => req.Contains(p.id)).ToArray();
-            cart.pages = currentpages.Where(p => !req.Contains(p.id)).ToArray();
 
-            //it is safe to set pages fro deletion before removing from document
-            //as if pages are still in the document it will not be deleted
-            await _pageDeleteService.SetPagesForDeletionAsync(_revDb, pagestoDelete, null, this.currentLoggedonUser(), cartId);
-            await _revDb.AddorUpdateAsync(cart);
+            var currentUser = this.currentLoggedonUser();
 
-            /*
-			foreach (var p in pagestoDelete)
-			{
-				
-				_revAudit.Log(AuditAction.imageDeleteRequested, this.currentLoggedonUser(),
-					p.id,
-					_revDb.workspaceName,
-					new Dictionary<string, string>
-					{
-						{"pageHolderId",cartId }
-					});
+            // Log the actual type for debugging
+            var cartType = cart.GetType().Name;
+            _logger.LogInformation($"Deleting {pagestoDelete.Length} pages from {cartId} (Type: {cartType})");
 
-			}
-			*/
+            // Determine delete strategy based on cart type:
+            // - ScanBatchModel (unassigned pages in /new): HARD DELETE (permanently remove)
+            // - DocumentModel (saved documents): SOFT DELETE (mark as deleted, can be restored)
+            if (cart is ScanBatchModel)
+            {
+                _logger.LogInformation($"Hard deleting {pagestoDelete.Length} pages from cart {cartId}");
 
+                // For unassigned carts, delete ALL pages including originals
+                // (originals are only protected in saved documents where they're shared across rendered pages)
+                var pagesToHardDelete = pagestoDelete.ToArray();
+
+                _logger.LogInformation($"Preparing to hard delete {pagesToHardDelete.Length} pages (including originals)");
+
+                if (pagesToHardDelete.Length > 0)
+                {
+                    try
+                    {
+                        // Use $pull to permanently remove pages from the array
+                        var pullUpdate = Builders<ScanBatchModel>.Update.PullFilter(
+                            c => c.pages,
+                            Builders<PageImageModel>.Filter.In(p => p.id, pagesToHardDelete.Select(p => p.id)));
+
+                        // Use the cart's actual database _id for the filter
+                        // The cart.id property contains the correct _id value from MongoDB
+                        var filter = Builders<ScanBatchModel>.Filter.Eq(c => c.id, cart.id);
+
+                        _logger.LogInformation($"Executing MongoDB update to remove pages from cart {cart.id}");
+
+                        var updateResult = await _revDb.getCollection<ScanBatchModel>()
+                            .UpdateOneAsync(filter, pullUpdate);
+
+                        _logger.LogInformation($"MongoDB update result - Acknowledged: {updateResult.IsAcknowledged}, Matched: {updateResult.MatchedCount}, Modified: {updateResult.ModifiedCount}");
+
+                        if (updateResult.IsAcknowledged && updateResult.ModifiedCount > 0)
+                        {
+                            _logger.LogInformation($"Successfully hard deleted {pagesToHardDelete.Length} pages from cart {cartId}");
+
+                            // Mark pages for permanent deletion from storage
+                            await _pageDeleteService.SetPagesForDeletionAsync(
+                                _revDb,
+                                pagesToHardDelete,
+                                DateTime.Now.AddHours(10),
+                                currentUser,
+                                null);
+                        }
+                        else
+                        {
+                            _logger.LogWarning($"Failed to hard delete pages from cart {cartId} - MatchedCount: {updateResult.MatchedCount}, ModifiedCount: {updateResult.ModifiedCount}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, $"Exception during hard delete of pages from cart {cartId}");
+                        throw;
+                    }
+
+                    foreach (var page in pagesToHardDelete)
+                    {
+                        _revAudit.Log(AuditAction.imageDeleteRequested, currentUser,
+                            page.id,
+                            _revDb.workspaceId,
+                            new Dictionary<string, string>
+                            {
+                                {"pageHolderId", cartId },
+                                {"hardDelete", "true" }
+                            });
+                    }
+                }
+            }
+            else // DocumentModel - soft delete
+            {
+                _logger.LogInformation($"Soft deleting {pagestoDelete.Length} pages from document {cartId}");
+
+                var processedIndices = new HashSet<int>();
+
+                foreach (var page in pagestoDelete)
+                {
+                    var pageIndex = Array.FindIndex(pagesArray, p => p.id == page.id);
+
+                    if (pageIndex < 0)
+                    {
+                        _logger.LogWarning($"Page {page.id} not found in document {cartId}, skipping");
+                        continue;
+                    }
+
+                    // Prevent deletion of original source files
+                    var fileName = System.IO.Path.GetFileName(page.id);
+                    if (fileName.StartsWith("original.", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _logger.LogWarning($"Cannot delete source file {page.id} from document {cartId}");
+                        continue;
+                    }
+
+                    if (processedIndices.Contains(pageIndex))
+                    {
+                        continue;
+                    }
+
+                    processedIndices.Add(pageIndex);
+
+                    var pageUpdate = Builders<DocumentModel>.Update
+                        .Set($"pages.{pageIndex}.isDeleted", true)
+                        .Set($"pages.{pageIndex}.deletedBy", currentUser)
+                        .Set($"pages.{pageIndex}.deletedAt", DateTime.UtcNow);
+
+                    FilterDefinition<DocumentModel> filter;
+                    if (ObjectId.TryParse(cart.id, out var objectId))
+                    {
+                        filter = Builders<DocumentModel>.Filter.Eq("_id", objectId);
+                    }
+                    else
+                    {
+                        filter = new BsonDocumentFilterDefinition<DocumentModel>(new BsonDocument("_id", cart.id));
+                    }
+
+                    var updateResult = await _revDb.getCollection<DocumentModel>()
+                        .UpdateOneAsync(filter, pageUpdate);
+
+                    if (updateResult.IsAcknowledged && updateResult.ModifiedCount > 0)
+                    {
+                        _logger.LogInformation($"Successfully soft deleted page {page.id} from document {cartId}");
+                    }
+                    else
+                    {
+                        _logger.LogWarning($"Failed to soft delete page {page.id} from document {cartId}");
+                    }
+
+                    _revAudit.Log(AuditAction.imageDeleteRequested, currentUser,
+                        page.id,
+                        _revDb.workspaceId,
+                        new Dictionary<string, string>
+                        {
+                            {"pageHolderId", cartId },
+                            {"softDelete", "true" }
+                        });
+                }
+            }
         }
 
         /// <summary>
